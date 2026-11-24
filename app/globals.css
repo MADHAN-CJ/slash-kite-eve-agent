@@ -1,0 +1,143 @@
+@import "tailwindcss";
+@source "../node_modules/streamdown/dist/*.js";
+
+@font-face {
+  font-family: "Departure Mono";
+  src: url("/brand/fonts/departure-mono.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Onest";
+  src: url("/brand/fonts/onest-latin.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Libre Baskerville";
+  src: url("/brand/fonts/libre-baskerville-500-latin.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: "Onest", -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-serif: "Libre Baskerville", Georgia, "Times New Roman", serif;
+  --font-mono: "Departure Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+
+:root {
+  color-scheme: light;
+  /*
+   * /markets theme — shared with zap-kite-mcp, zap-eve-agent and slash-dhan-mcp (keep the
+   * three in sync): ink on warm white, near-black buttons, the yellow
+   * "select" highlight, olive positive / brick negative. Light-only.
+   */
+  --background: #ffffff;
+  --foreground: #20251b;
+  --card: #ffffff;
+  --card-foreground: #20251b;
+  --popover: #ffffff;
+  --popover-foreground: #20251b;
+  --primary: #171a17;
+  --primary-foreground: #ffffff;
+  --secondary: #e6efdc;
+  --secondary-foreground: #34432e;
+  --muted: #f7f6f2;
+  --muted-foreground: #62675f;
+  --accent: #f7f6f2;
+  --accent-foreground: #20251b;
+  --destructive: #a43c2f;
+  --border: #e4e7dc;
+  --input: #e4e7dc;
+  --ring: #4a6640;
+  --select: #f6d64d;
+  --positive: #34432e;
+  --positive-surface: #e6efdc;
+  --negative: #a43c2f;
+  --negative-surface: #f8e3df;
+  --radius: 0.625rem; /* 10px */
+  --sidebar: #f7f6f2;
+  --sidebar-foreground: #20251b;
+}
+
+* {
+  border-color: var(--border);
+}
+
+html {
+  height: 100%;
+}
+
+body {
+  min-height: 100%;
+  margin: 0;
+  background: var(--background);
+  font-family: var(--font-sans);
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+  text-wrap: pretty;
+}
+
+/* /markets wordmark: the drawn slash, masked so it inherits the text colour. */
+.markets-slash {
+  display: inline-block;
+  width: 0.424em;
+  height: 0.8em;
+  margin-right: 0.04em;
+  vertical-align: -0.12em;
+  overflow: hidden;
+  text-indent: 1em;
+  background: currentColor;
+  mask: url("/brand/markets-slash.svg") center / contain no-repeat;
+  -webkit-mask: url("/brand/markets-slash.svg") center / contain no-repeat;
+}
+
+.markets-label {
+  display: inline;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  color: inherit;
+  white-space: nowrap;
+}

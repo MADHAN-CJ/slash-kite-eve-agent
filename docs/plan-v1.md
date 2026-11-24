@@ -1,0 +1,85 @@
+# Plan v1 — slash-kite-eve-agent (/markets · Kite edition on eve)
+
+> Drafted 2026-11-23 from the user's answers (memory `zap-kite-eve-agent.md`, D1–D11 + follow-ups).
+> Playbook rules: phases with a Verify step, no commits by Claude, stop on ambiguity.
+> Repo: `zap/slash-kite-eve-agent/` (seeded from `zap/zap-eve-agent`).
+
+## 1. The product
+
+A **general chat** for a /markets user about their Zerodha account and Indian markets. The agent
+(eve chassis) has exactly three capability sources:
+
+1. **The deployed Kite MCP** (`https://mcp.slash.markets`, repo `zap-kite-mcp/mcp/`) as ONE eve
+   MCP connection — tools as deployed: `run_python`, `auth_status`, `create_watcher`,
+   `list_watchers`, `profile`. The MCP is **not modified**.
+2. **Tavily web search** (`web_search` tool, our own `defineTool` overriding eve's provider-run
+   default) — restricted to markets/finance topics, results carry citations into the UI.
+3. **The `zap-kite-mcp/mcp/SKILL.md`** as an eve skill loaded on demand via `load_skill`, fetched
+   at boot from `$KITE_MCP_URL/SKILL.md` (fallback: committed copy), with a short preface that maps
+   tool names and states the web-search rules.
+
+Zero writes anywhere (no order placement; watchers = e-mail alerts, allowed ungated as on claude.ai).
+Threads/history, login, UI chrome and design (`/markets` brand) copied from zap-eve-agent.
+
+## 2. Decisions
+
+| # | Decision |
+|---|---|
+| D1 | General chat, not position-first. No positions list, no position hub; sidebar = plain thread list (title = first message, rename, unlimited, soft delete). |
+| D2 | App identity = own email-OTP → 7-day JWT (zap-eve-agent `auth` routes, `jose`, Resend `Slash Markets <login-link@codeongrass.com>`). Own Postgres (docker :5439 local), never the MCP's DB. |
+| D3 | **MCP access per app user via a real OAuth 2.1 flow against mcp.slash.markets** (DCR once per deployment → client_id stored; per login: authorize + PKCE S256 → code → token). Tokens (access 1 h, refresh 30 d) stored AES-256-GCM in `mcp_grants` keyed by app user. Connection `auth.getToken` resolves sessionId → userId → grant, refreshes when < 2 min left, fail-closed (no grant → tool error telling the user to reconnect). |
+| D4 | **"Automatic" MCP login = immediately after app OTP login the app redirects into the MCP authorize URL** (user completes the MCP's own email+OTP page once), callback lands on `/api/mcp/callback` → chat. **App logout deletes the grant rows** (the MCP has no revocation endpoint; the refresh token is discarded on our side, the 1 h access token dies on its own). Known friction: one extra OTP per app login; accepted (MCP untouched). |
+| D5 | MCP side is single-account today (one Zerodha login); every app user authorizes against it. Zerodha login/reconnect lives on app.slash.markets — `TokenExpired` → the agent sends the user there (URL from `auth_status`). |
+| D6 | Tools exposed: all 5 MCP tools, no approval gating (reads + e-mail watchers). Staging vs prod MCP = env `KITE_MCP_URL` (default prod; decided at deploy time). |
+| D7 | `web_search`: Tavily `POST https://api.tavily.com/search` (`search_depth` basic/advanced, `topic` general/news, `max_results` ≤ 8). Restriction is prompt-level (tool description + skill: markets/finance/company/macro only); no hard domain filter in v1 so results aren't starved; empty queries rejected. Results → `{results:[{title,url,snippet,published}]}`; UI renders citation cards under the tool call and persists them with the message (parts jsonb). Usage counted in `hooks/usage.ts`. No hard cap in v1. |
+| D8 | Skill: packaged `agent/skills/kite-markets/SKILL.md` = preface + upstream SKILL.md body. **Boot sync**: `scripts/sync-skill.ts` (run by `predev`/`prebuild:eve`) fetches `$KITE_SKILL_URL` (the MCP does not serve SKILL.md — found 2026-11-23; default = raw GitHub of the public zap-kite-mcp repo, `prod` branch), falls back to the committed `upstream.md`, rewrites the frontmatter description to eve's routing-hint form. Preface: tools are called `kite__run_python` etc.; charts protocol (D10); web-search rules (D11). |
+| D9 | Model: `claude-sonnet-5` default, `AGENT_MODEL` env switch (Opus allowed), `modelContextWindowTokens` per model. eve built-in sandbox tools disabled via sentinels: `bash`, `read_file`, `write_file`, `glob`, `grep`, `web_fetch`, `todo`. Kept: `load_skill`, `connection_search`, our `web_search`. No subagents. |
+| D10 | **Charts protocol**: a script may end its output with one line `@@chart {json}` where json = `{"type":"candles","title":"NSE:TCS 15m","rows":[{"time":"…IST","open":…,"high":…,"low":…,"close":…,"volume":…}]}` or `{"type":"option_chain","underlying":"NIFTY","expiry":"…","spot":…,"strikes":[{"strike":…,"ce":{"oi":…,"iv":…,"last_price":…},"pe":{…}}]}`, ≤ 500 rows. The UI strips the line from the shown text and renders lightweight-charts (candles) / SVG (chain). The skill preface documents it. |
+| D11 | Web search rules in the skill: USE for news, events, results/earnings dates, corporate actions, policy/macro, "why did X move", anything the sandbox data cannot answer; NEVER for prices, P&L, account data, candles (MCP only); cite sources inline. |
+| D12 | Hosting: local only now (`withEve` dev server, docker Postgres `slash-kite-eve` :5439). Vercel two-project deploy = pending phase P8, not now. Hostnames later. |
+| D13 | Open-source hygiene: MIT, `.env.example` only, biome + vitest + GitHub Actions CI (typecheck, lint, test, builds), no leftover working comments. |
+| D14 | Error semantics: app 401 = "log in again" ONLY. MCP token missing/expired → tool-level error `MCP_NOT_CONNECTED` (UI banner "Reconnect /markets" → re-run authorize). Zerodha expiry comes back inside `run_python` output as `TokenExpired` text → the agent tells the user to reconnect at app.slash.markets. |
+
+## 3. What is copied vs dropped from zap-eve-agent
+
+| Keep (retarget) | Drop |
+|---|---|
+| Next 16 + `withEve()`, `agent/{agent,channels/eve,hooks/persist,hooks/usage}`, Drizzle `users/otps/threads/messages/session_context`, eve proxy route, auth routes + `lib/server/{auth,otp,emails,threads}`, `login.tsx`, `sidebar.tsx`, `thread-chat.tsx`, `agent-message.tsx`, `history-message.tsx`, `editable-title.tsx`, `workspace.tsx` (simplified), `markets.css`/globals, `components/charts/*`, deploy scripts (parked), docker-compose | Dhan lib + 11 tools, `options` subagent, `broker_connections` + broker routes/modal, positions list / position hub / market-chat / interactive chart / drawings / indicators, watch tables + sweep/email (watchers live in the MCP), token-renew, kickoff/position injection, `mcp/` Python dir, bench scripts |
+
+## 4. New pieces
+
+- `agent/connections/kite.ts` — `defineMcpClientConnection({ url: KITE_MCP_URL, description, auth: (ctx) => ({ getToken: () => resolveMcpToken(ctx) }), tools: { allow: [...5] } })`.
+- `agent/lib/mcp/{oauth,grants,token}.ts` — discovery, DCR (`mcp_clients`), PKCE authorize URL, code exchange, single-flight refresh, encrypted `mcp_grants` {userId unique, accessEnc, refreshEnc, accessExpiresAt, scope, status}.
+- `app/api/mcp/{start,callback,status,disconnect}` + `POST /api/auth/logout` (deletes grants).
+- `agent/tools/web_search.ts` — Tavily; sentinels for `bash,read_file,write_file,glob,grep,web_fetch,todo`.
+- `agent/skills/kite-markets/{SKILL.md,upstream.md}` + `scripts/sync-skill.ts`.
+- `components/charts/chart-line.ts` — parse/strip the `@@chart` line from `run_python` results.
+- `agent/instructions.md` — /markets general analyst identity; read-only; load the skill before any Kite question; denial/expiry semantics.
+
+## 5. Phases
+
+- [x] **P0 Scaffold** *(2026-11-23)* — copied zap-eve-agent (no node_modules/.git/.env/.next/mcp/docs), Drop column removed (Dhan lib + tools, options subagent, broker routes/modal, positions/hub/market-chat/charts-interactive, watch tables/sweep/emails, token-renew, kickoff/selection, bench scripts, old migrations), package `slash-kite-eve-agent`, docker-compose `slash-kite-eve` :5439, `.env.example` rewritten, `git init` (staged, uncommitted). Already retargeted: schema (users/otps/mcp_clients/mcp_grants/session_context/threads/messages — no position columns), mirror/persist/session-context, proxy (no kickoff/position header, no subagent tee), threads REST + client, flat-list Sidebar, general-chat Workspace + ThreadChat, agent.ts (AGENT_MODEL switch), instructions.md draft, 7 `disableTool` sentinels (bash/read_file/write_file/glob/grep/web_fetch/todo), `components/charts/chart-line.ts` (`@@chart` parser) + ToolResultChart retargeted to `*run_python`. **Verified:** `tsc --noEmit` clean, `next build` clean (routes: /, /api/auth/*, /api/eve/v1/[...path], /api/threads*), `eve build` clean (Node 24); `grep -riE 'dhan|watch|kickoff|subagent' agent app lib components scripts` empty.
+- [x] **P1 DB + auth** *(2026-11-23)* — migration `drizzle/0000_init.sql` (6 tables) applied to docker `slash-kite-eve-postgres` :5439; `agent/lib/mcp/grants.ts` (save/get/delete/markExpired, AES at rest); `POST /api/auth/logout` deletes the user's grant (D4); dev login moved from the hard-coded zaptrade account to `DEV_LOGIN_EMAIL`/`DEV_LOGIN_CODE` (refused when NODE_ENV=production); client `logout()` calls the route then clears the JWT. `.env` seeded with fresh secrets (ANTHROPIC/TAVILY blank, KITE_MCP_URL=staging). **Verified:** `db:smoke` green; curl 14/14 — dev request-otp ok, bad email 400, wrong code 401, verify → JWT, /api/threads 401 w/o token + `[]` with, logout 401 w/o token, logout deletes a seeded grant row (1→0), real-email OTP logged to console → verify ok → replay rejected, `/api/eve/v1/health` 200; tsc clean.
+- [x] **P2 MCP OAuth** *(2026-11-23)* — `agent/lib/mcp/oauth.ts` (RFC 8414 discovery w/ RFC 9728 fallback, cached; DCR once per issuer as a PUBLIC client `token_endpoint_auth_method=none` → `mcp_clients`; PKCE S256 authorize URL w/ `resource`; server-side verifier in new table `mcp_auth_txns` (migration `0001_mcp_auth_txns.sql`, 10-min TTL, deleted on use); code exchange → `saveGrant`; `accessTokenFor` refreshes <2 min before expiry, single-flight per user, marks `expired` + throws on refresh failure; status/disconnect), `agent/lib/mcp/token.ts` (`resolveMcpToken(ctx)` for the connection — fail-closed, `MCP_NOT_CONNECTED:` prefix, `MCP_BENCH_ACCESS_TOKEN` dev-only fallback for direct `eve dev` sends), routes `POST /api/mcp/start` · `GET /api/mcp/callback` (no JWT — the state row names the user; lands on `/?mcp=connected|error&reason=`) · `GET /api/mcp/status` · `POST /api/mcp/disconnect`. The MCP's login is plain HTML forms, so the e2e drives it with fetch (no browser needed). **Verified LIVE against staging-kite-mcp.slash.markets: `npm run e2e:oauth` 17/17** — start URL has PKCE+state, authorize→/login?txn, email+OTP (staging dev login) → 302 to our callback, callback→`?mcp=connected`, replayed callback → `invalid_state`, grant row encrypted (`v1:` prefix), MCP initialize 401 w/o bearer / 200 with, forced near-expiry → ONE refresh for two concurrent callers + new token works, logout → grant gone → `accessTokenFor` throws not-connected. **Finding:** the MCP does NOT serve `/SKILL.md` (404 on staging and prod) → D8 boot fetch source becomes the public repo raw file (`KITE_SKILL_URL`, default `https://raw.githubusercontent.com/MADHAN-CJ/zap-kite-mcp/prod/mcp/SKILL.md`), committed copy as fallback.
+- [x] **P3 Agent** *(2026-11-23)* — `agent/connections/kite.ts` (`defineMcpClientConnection`, per-session `auth(ctx).getToken` → `resolveMcpToken`, `tools.allow` = the 5 MCP tools), `agent/tools/web_search.ts` (Tavily `/search`, topic news|general, days, ≤8 results → `{query, topic, results[{title,url,snippet,published,score}]}`, `{error}` envelopes, abort+20 s timeout), skill = `skill-src/preface.md` (prefixed tool names, no local sandbox, web-search rules, `@@chart` protocol, access-error handling) + `skill-src/upstream.md` (committed copy of the MCP SKILL.md) → `scripts/sync-skill.ts` writes gitignored `agent/skills/kite-markets/SKILL.md` on `predev`/`prebuild:eve` (fetches raw GitHub, validates, refreshes the committed copy), `agent/instructions.md`, usage hook now counts tool calls per turn. **Verified:** `/eve/v1/info` → tools = ask_question, load_skill, web_search ONLY (sandbox tools gone); connection `kite` + skill `kite-markets` registered; eve build clean. **`npm run e2e:agent` 10/10 LIVE (staging MCP, real Sonnet 5 + Tavily):** A "How is my portfolio doing" → `load_skill → connection_search → kite__run_python` → correct answer that the Zerodha session on the staging test account is expired, with the app.slash.markets-style reconnect link from the MCP (23 s); B "Why did NIFTY move today" → `web_search ×3` + kite attempt → two sourced reasons with Reuters URL (41 s); both threads persisted with titles. **Usage (usage-log.ndjson):** A = 5 steps, 82k in / 1.9k out (26.6k cache read, 40k cache write); B = 6 steps, 130k in / 2.3k out. Per-step prompt: ~7.3k base → ~16.5k after load_skill → ~27k after connection_search (the MCP's run_python description carries the whole zapkite schema, ≈10k tokens, duplicating much of the skill) → ~53–64k by the end. ⚠️ Optimisation candidate for later: the skill + the MCP tool description overlap; measure a run w/o the skill (tool description alone) before P7. NOTE: user set `KITE_MCP_URL` to PROD in `.env`; the automated run used staging via a shell override because prod has no dev login — prod needs a real OTP (P7).
+- [ ] **P4 Proxy + threads REST** — proxy minus position/kickoff; `session_context` stores userId; threads list/rename/delete. *Verify:* curl matrix (401/403/404, fork 409, token injection, stream passthrough).
+- [ ] **P5 Frontend** — login → (auto) MCP authorize → chat workspace with sidebar; "Reconnect /markets" banner; citation cards; `@@chart` renderer; sign-out confirm. *Verify:* Playwright smoke.
+- [ ] **P6 Docs/env/hygiene** — README, `.env.example`, LICENSE (MIT), biome, vitest unit tests (chart-line parser, refresh single-flight, skill frontmatter rewrite), GitHub Actions CI. *Verify:* lint + test + typecheck + builds green.
+- [ ] **P7 Live smoke** — real ANTHROPIC + TAVILY keys, prod MCP, user's Zerodha session: one real conversation (account + market + news question), cost readout from the usage log. **Needs user.**
+- [ ] **P8 Deploy (pending, not now)** — Vercel two-project, hostnames, Neon schema, secrets.
+
+## 6. Env vars
+
+`DATABASE_URL`, `ANTHROPIC_API_KEY`, `AGENT_MODEL` (default claude-sonnet-5), `TAVILY_API_KEY`,
+`KITE_MCP_URL` (default https://mcp.slash.markets), `KITE_SKILL_URL` (raw SKILL.md source), `APP_BASE_URL` (OAuth redirect base),
+`AUTH_JWT_SECRET`, `CREDS_ENCRYPTION_KEY`, `CREDS_HASH_PEPPER`, `EVE_PROXY_SECRET`,
+`RESEND_API_KEY` + `OTP_FROM_EMAIL`, `EVE_UPSTREAM_ORIGIN` (prod only). Dev-only test login via
+`DEV_LOGIN_EMAIL`/`DEV_LOGIN_CODE`.
+
+## 7. Risks / open points
+
+- R1 MCP OAuth adds an OTP step per app login (D4) — fixes would touch the MCP (out of scope).
+- R2 `run_python` output is text → charts depend on the model following `@@chart`; measure in P7.
+- R3 Tavily restriction is prompt-level, not enforced — accepted.
+- R4 `getToken` runs per tool call; refresh must be single-flight per user (MCP rotates pairs).
+- R5 Skill fetched at boot: body validated (must contain `run_python`) before replacing the committed copy.

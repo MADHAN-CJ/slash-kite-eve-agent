@@ -1,0 +1,26 @@
+# Local-dev Postgres for slash-kite-eve-agent (users, MCP grants, chat
+# history). Host port 5439 — the copilot-family repos each pin a unique port
+# (5433 trophy … 5438 zap-eve-agent; 5439 is ours) and an explicit compose
+# `name:`, because shared default project names once made `up` in one repo
+# replace another repo's running postgres container.
+name: slash-kite-eve
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: slash-kite-eve-postgres
+    ports:
+      - "5439:5432"
+    environment:
+      POSTGRES_USER: slashkite
+      POSTGRES_PASSWORD: slashkite
+      POSTGRES_DB: slash_kite_eve
+    volumes:
+      - slash_kite_eve_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U slashkite -d slash_kite_eve"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  slash_kite_eve_pgdata:
