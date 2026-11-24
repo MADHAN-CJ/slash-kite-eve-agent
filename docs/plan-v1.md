@@ -83,3 +83,11 @@ Threads/history, login, UI chrome and design (`/markets` brand) copied from zap-
 - R3 Tavily restriction is prompt-level, not enforced — accepted.
 - R4 `getToken` runs per tool call; refresh must be single-flight per user (MCP rotates pairs).
 - R5 Skill fetched at boot: body validated (must contain `run_python`) before replacing the committed copy.
+
+## 8. Indicator test suite + refresh-race fix (2026-11-24)
+
+- **`tests/indicators/*.test.ts`** (vitest, one file per indicator, run in parallel workers): closes, sma, ema, rsi, macd, bollinger, atr, vwap, pct_change, options_math — each sends synthetic data through the REAL MCP `run_python` (`tests/helpers/mcp.ts`: same issuer + a user's stored grant, `MCP_TEST_EMAIL`/`MCP_TEST_ACCESS_TOKEN`) and compares against from-scratch textbook references in `tests/helpers/data.ts`. Files SKIP (never fail) without a live Zerodha session. **Verified live on prod with the user's own grant: 42/42** (10 files in parallel, ~8 s wall).
+- **`tests/unit/`**: `chart-line.test.ts` (`@@chart` parser — found + fixed two bugs: a malformed spec used to erase the text line; the 500-row cap was applied before validation), `skill.test.ts` (generated skill documents every indicator/data function, prefixed tool names, web-search rules, `@@chart`, no-sandbox + access-error guidance).
+- **Bug found + fixed: cross-process refresh race.** `accessTokenFor` single-flight was per process; 10 vitest workers (and, in prod, several eve runtime instances) refreshed the same grant at once; the MCP rotates refresh tokens so one won and the losers marked the grant `expired` (observed on the test account). Refresh now runs inside a transaction holding `SELECT … FOR UPDATE` on the grant row and re-reads after the lock. `npm run e2e:refresh-race` (6 separate node processes) → one refresh, same token everywhere, grant active.
+- New scripts: `e2e:refresh-race`, `mcp:connect` (browser-less connect for the dev user), `test`, `test:unit`, `test:indicators`. Dev deps: vitest 3.2.7, @modelcontextprotocol/sdk 1.32.2.
+- The Python twin written in zap-kite-mcp by mistake was removed (user decision 2026-11-24); the agents' library findings (rsi lacks period validation, NaN poisons sma) are logged in the zap-kite-mcp memory.

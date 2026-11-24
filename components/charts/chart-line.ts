@@ -55,6 +55,8 @@ export function extractChartLine(text: string): { text: string; chart: ChartSpec
     if (!line) continue;
     if (!line.startsWith(MARKER)) return { text, chart: null };
     const chart = parseSpec(line.slice(MARKER.length));
+    // A malformed spec stays visible as text rather than vanishing silently.
+    if (!chart) return { text, chart: null };
     const rest = [...lines.slice(0, i), ...lines.slice(i + 1)].join('\n').replace(/\n+$/, '');
     return { text: rest, chart };
   }
@@ -78,7 +80,7 @@ function parseSpec(json: string): ChartSpec | null {
 
   if (o.type === 'candles' && Array.isArray(o.rows)) {
     const rows: ChartCandleRow[] = [];
-    for (const r of o.rows.slice(-MAX_ROWS)) {
+    for (const r of o.rows) {
       if (!r || typeof r !== 'object') continue;
       const c = r as Record<string, unknown>;
       const open = num(c.open), high = num(c.high), low = num(c.low), close = num(c.close);
@@ -90,7 +92,7 @@ function parseSpec(json: string): ChartSpec | null {
       type: 'candles',
       title: typeof o.title === 'string' ? o.title : undefined,
       interval: num(o.interval),
-      rows,
+      rows: rows.slice(-MAX_ROWS),
     };
   }
 

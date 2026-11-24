@@ -1,9 +1,9 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { and, eq, gt, lt } from 'drizzle-orm';
+import { and, eq, gt, lt, sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import { decryptSecret, encryptSecret } from '../db/crypto';
-import { mcpAuthTxns, mcpClients } from '../db/schema';
-import { deleteGrant, getGrant, markGrantExpired, saveGrant, type GrantTokens } from './grants';
+import { mcpAuthTxns, mcpClients, mcpGrants } from '../db/schema';
+import { deleteGrant, getGrant, saveGrant, type GrantTokens } from './grants';
 
 /**
  * OAuth 2.1 client for the Kite MCP (plan D3/D4). This app is a public
@@ -204,12 +204,25 @@ export async function completeAuthorization(state: string, code: string): Promis
   return txn.userId;
 }
 
-// --- Access tokens for the connection (single-flight refresh per user) ---
+// --- Access tokens for the connection (refresh serialized across processes) ---
 
 const inflight = new Map<string, Promise<string>>();
 
+function needsRefresh(expiresAt: Date): boolean {
+  return expiresAt.getTime() - Date.now() <= REFRESH_SKEW_MS;
+}
+
 /**
  * A usable access token for the user, refreshing when it is about to expire.
+ *
+ * The MCP rotates the refresh token on every use, so two refreshes of the
+ * same grant can never both succeed. Callers run in many processes (vitest
+ * workers, several eve runtime instances), so an in-memory single-flight is
+ * not enough: the refresh runs inside a transaction holding `SELECT … FOR
+ * UPDATE` on the grant row. A process that arrives second blocks on the row,
+ * re-reads it, finds the fresh token the winner stored, and returns that
+ * instead of refreshing again — or marking the grant expired by mistake.
+ *
  * Throws McpOAuthError('not_connected') when there is no grant, and
  * 'refresh_failed' (grant marked expired) when the MCP rejects the refresh —
  * both mean "the user must reconnect /markets", never a silent fallback.
@@ -219,31 +232,55 @@ export async function accessTokenFor(userId: string): Promise<string> {
   if (!grant || grant.status !== 'active') {
     throw new McpOAuthError('Not connected to /markets — reconnect from the app.', 'not_connected');
   }
-  if (grant.accessExpiresAt.getTime() - Date.now() > REFRESH_SKEW_MS) return grant.accessToken;
-  if (!grant.refreshToken) {
-    await markGrantExpired(userId);
-    throw new McpOAuthError('The /markets connection expired — reconnect from the app.', 'refresh_failed');
-  }
+  if (!needsRefresh(grant.accessExpiresAt)) return grant.accessToken;
+
   const pending = inflight.get(userId);
   if (pending) return pending;
-  const work = (async () => {
-    try {
-      const t = await tokenRequest(grant.issuer, { grant_type: 'refresh_token', refresh_token: grant.refreshToken as string });
-      if (!t.ok) {
-        await markGrantExpired(userId);
-        throw new McpOAuthError(`The /markets connection expired (${t.error ?? t.status}) — reconnect from the app.`, 'refresh_failed');
-      }
-      const next = toGrant(t);
-      // Servers that don't rotate keep the old refresh token valid.
-      if (!next.refreshToken) next.refreshToken = grant.refreshToken;
-      await saveGrant(userId, grant.issuer, next);
-      return next.accessToken;
-    } finally {
-      inflight.delete(userId);
-    }
-  })();
+  const work = refreshUnderLock(userId).finally(() => inflight.delete(userId));
   inflight.set(userId, work);
   return work;
+}
+
+async function refreshUnderLock(userId: string): Promise<string> {
+  return db().transaction(async (tx) => {
+    const locked = await tx.execute(sql`
+      select issuer, access_token_enc, refresh_token_enc, access_expires_at, status
+      from ${mcpGrants} where ${mcpGrants.userId} = ${userId} for update`);
+    const row = locked.rows[0] as
+      | { issuer: string; access_token_enc: string; refresh_token_enc: string | null; access_expires_at: Date | string; status: string }
+      | undefined;
+    if (!row || row.status !== 'active') {
+      throw new McpOAuthError('Not connected to /markets — reconnect from the app.', 'not_connected');
+    }
+    const expiresAt = new Date(row.access_expires_at);
+    // Another process refreshed while we waited for the lock: use its token.
+    if (!needsRefresh(expiresAt)) return decryptSecret(row.access_token_enc);
+    const refreshToken = row.refresh_token_enc ? decryptSecret(row.refresh_token_enc) : null;
+    if (!refreshToken) {
+      await tx.update(mcpGrants).set({ status: 'expired', updatedAt: new Date() }).where(eq(mcpGrants.userId, userId));
+      throw new McpOAuthError('The /markets connection expired — reconnect from the app.', 'refresh_failed');
+    }
+    const t = await tokenRequest(row.issuer, { grant_type: 'refresh_token', refresh_token: refreshToken });
+    if (!t.ok) {
+      await tx.update(mcpGrants).set({ status: 'expired', updatedAt: new Date() }).where(eq(mcpGrants.userId, userId));
+      throw new McpOAuthError(`The /markets connection expired (${t.error ?? t.status}) — reconnect from the app.`, 'refresh_failed');
+    }
+    const next = toGrant(t);
+    // Servers that don't rotate keep the old refresh token valid.
+    if (!next.refreshToken) next.refreshToken = refreshToken;
+    await tx
+      .update(mcpGrants)
+      .set({
+        accessTokenEnc: encryptSecret(next.accessToken),
+        refreshTokenEnc: encryptSecret(next.refreshToken),
+        accessExpiresAt: next.accessExpiresAt,
+        scope: next.scope,
+        status: 'active',
+        updatedAt: new Date(),
+      })
+      .where(eq(mcpGrants.userId, userId));
+    return next.accessToken;
+  });
 }
 
 export interface ConnectionStatus {

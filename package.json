@@ -20,7 +20,12 @@
     "db:migrate": "drizzle-kit migrate",
     "db:smoke": "tsx scripts/db-smoke.ts",
     "e2e:oauth": "tsx scripts/e2e-mcp-oauth.ts",
-    "e2e:agent": "tsx scripts/e2e-agent.ts"
+    "e2e:agent": "tsx scripts/e2e-agent.ts",
+    "e2e:refresh-race": "tsx scripts/e2e-refresh-race.ts",
+    "mcp:connect": "tsx scripts/mcp-connect.ts",
+    "test": "vitest run",
+    "test:unit": "vitest run tests/unit",
+    "test:indicators": "vitest run tests/indicators"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.10",
@@ -57,6 +62,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@types/node": "24.x",
     "@types/pg": "^8.20.0",
     "@types/react": "19.2.15",
@@ -66,7 +72,8 @@
     "microsandbox": "^0.5.10",
     "trading-signals": "^8.3.0",
     "tsx": "^4.23.0",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "vitest": "^3.2.7"
   },
   "overrides": {
     "ai": "^7.0.0"
