@@ -45,3 +45,19 @@ Other scripts: `npm run e2e:oauth` (OAuth flow against the MCP), `npm run
 e2e:agent` (two real agent turns), `npm run e2e:refresh-race` (cross-process
 token refresh), `npm run mcp:connect` (connect the dev user without a browser),
 `python3 scripts/ui-smoke.py` (Playwright browser smoke).
+
+## Deploy (Vercel)
+
+One Vercel project (`slash-kite-eve`): the Next app serves the eve runtime itself
+through `withEve`, so there is no separate runtime project and `EVE_UPSTREAM_ORIGIN`
+stays unset. `npm run build` first syncs the Kite skill (`prebuild`), so the
+git-ignored `agent/skills/kite-markets/SKILL.md` is regenerated on every build.
+
+1. `npx vercel link --project slash-kite-eve` once (`.vercel/` is git-ignored).
+2. Set the production env vars from `.env.example` on the project — fresh secrets
+   per environment, a Neon `DATABASE_URL` (+ `DATABASE_URL_UNPOOLED`), and
+   `APP_BASE_URL` = the public URL (the MCP OAuth redirect is derived from it).
+3. `DATABASE_URL_UNPOOLED=<direct url> npm run db:migrate` to apply `drizzle/`.
+4. `bash scripts/deploy.sh --prod` (without `--prod` for a preview build check).
+5. Smoke: `GET /api/eve/v1/health` → `{"ok":true,"status":"ready"}`, then log in
+   with a real email code and let the app connect you to /markets.

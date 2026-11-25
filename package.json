@@ -9,6 +9,7 @@
     "skill:sync": "tsx scripts/sync-skill.ts",
     "predev": "npm run skill:sync",
     "prebuild:eve": "npm run skill:sync",
+    "prebuild": "npm run skill:sync",
     "build": "next build",
     "dev": "next dev",
     "start": "next start",
