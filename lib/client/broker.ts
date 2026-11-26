@@ -19,7 +19,7 @@ export interface BrokerStatus {
 
 export class SessionExpiredError extends Error {}
 
-async function handle<T>(res: Response): Promise<T> {
+export async function handle<T>(res: Response): Promise<T> {
   if (res.status === 401) throw new SessionExpiredError('Session expired');
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: string } | null;

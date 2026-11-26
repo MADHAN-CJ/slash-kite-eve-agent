@@ -6,12 +6,13 @@ import { Logomark, Wordmark } from '@/components/brand';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { requestOtp, verifyOtp } from '@/lib/client/settings';
+import { SiteFooter } from './site-footer';
 
 /**
  * Email → 6-digit OTP → session. Two steps on one card; the server logs the
  * code to its console when RESEND_API_KEY is unset (dev); DEV_LOGIN_EMAIL /
- * DEV_LOGIN_CODE define a fixed dev login. After this the workspace sends the
- * browser on to the /markets MCP login (plan D4).
+ * DEV_LOGIN_CODE define a fixed dev login. This login IS the /markets account
+ * (plan D15), so the workspace goes straight on to the Zerodha connect screen.
  */
 export function Login({ onLoggedIn }: { readonly onLoggedIn: () => void }) {
   const [step, setStep] = useState<'email' | 'code'>('email');
@@ -106,6 +107,8 @@ export function Login({ onLoggedIn }: { readonly onLoggedIn: () => void }) {
         )}
 
         {error ? <p className="text-center text-destructive text-sm">{error}</p> : null}
+
+        <SiteFooter compact />
       </div>
     </main>
   );

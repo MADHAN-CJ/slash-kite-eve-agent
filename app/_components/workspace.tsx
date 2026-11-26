@@ -20,6 +20,7 @@ import {
   SessionExpiredError,
   startKiteLogin,
 } from '@/lib/client/broker';
+import { prefillFromParams, type TradeForm } from '@/lib/client/kite-publisher';
 import {
   deleteThread as apiDeleteThread,
   renameThread as apiRenameThread,
@@ -29,9 +30,11 @@ import {
   type ThreadSummary,
 } from '@/lib/client/threads-api';
 import { ConnectScreen } from './connect-screen';
+import { KiteTradeCard } from './kite-trade-card';
 import { Login } from './login';
 import { Sidebar } from './sidebar';
 import { ThreadChat } from './thread-chat';
+import { WatchersView } from './watchers-view';
 
 /**
  * The workspace shell (plan §10 / D18): login gate → Zerodha connect screen →
@@ -43,11 +46,26 @@ import { ThreadChat } from './thread-chat';
  * for the session, in which case a banner in chat keeps the Login-with-Kite
  * button one click away. Kite sessions end every morning, so the banner is
  * also what the user sees first thing on a new day.
+ *
+ * Two more panes sit beside the chats: Watchers (the checks the analyst set
+ * up, managed here) and Trade on Kite (Zerodha's own order window, the only
+ * order path). Neither needs an active Zerodha session, so the gate applies
+ * to the chat panes only. `/?trade=1&tradingsymbol=…` opens the Trade pane
+ * pre-filled — the link the analyst gives when the user wants to act.
  */
 
 const SKIP_KEY = 'slash-kite:connect-skip';
 
-type View = { kind: 'draft' } | { kind: 'thread'; id: string };
+type View = { kind: 'draft' } | { kind: 'thread'; id: string } | { kind: 'watchers' } | { kind: 'trade' };
+
+/** Reads a `/?trade=1&…` deep link once and removes it from the address bar. */
+function consumeTradeLink(): TradeForm | null {
+  const url = new URL(window.location.href);
+  const form = prefillFromParams(url.searchParams);
+  if (!form) return null;
+  window.history.replaceState(null, '', url.pathname + url.hash);
+  return form;
+}
 
 const STARTERS = [
   'How is my portfolio doing today?',
@@ -126,6 +144,17 @@ function LoggedInWorkspace({ onLogout }: { readonly onLogout: () => void }) {
     void refreshBroker();
   }, [refreshBroker]);
   const connected = broker?.status === 'active';
+
+  // --- Trade on Kite (Kite Publisher; pre-filled from a watcher or a deep link) ---
+  const [tradePrefill, setTradePrefill] = useState<TradeForm | null>(null);
+  const openTrade = useCallback((form: TradeForm | null) => {
+    if (form) setTradePrefill(form);
+    setView({ kind: 'trade' });
+  }, []);
+  useEffect(() => {
+    const linked = consumeTradeLink();
+    if (linked) openTrade(linked);
+  }, [openTrade]);
 
   // --- Threads (chat history) ---
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
@@ -219,10 +248,11 @@ function LoggedInWorkspace({ onLogout }: { readonly onLogout: () => void }) {
     [view.kind, adoptedThreadId],
   );
 
-  const sidebarActiveId = view.kind === 'thread' ? view.id : (adoptedThreadId ?? '');
+  const sidebarActiveId = view.kind === 'thread' ? view.id : view.kind === 'draft' ? (adoptedThreadId ?? '') : '';
 
-  // The connect screen owns the main pane until Zerodha is active or the user skips it.
-  const gate = broker !== null && !connected && !skipped;
+  const chatView = view.kind === 'draft' || view.kind === 'thread';
+  // The connect screen owns the chat pane until Zerodha is active or the user skips it.
+  const gate = chatView && broker !== null && !connected && !skipped;
 
   return (
     <main className="flex h-dvh overflow-hidden bg-background text-foreground">
@@ -230,8 +260,11 @@ function LoggedInWorkspace({ onLogout }: { readonly onLogout: () => void }) {
         activeId={sidebarActiveId}
         onDelete={(id) => void removeThread(id)}
         onNewChat={startNewChat}
+        onOpenTrade={() => openTrade(null)}
+        onOpenWatchers={() => setView({ kind: 'watchers' })}
         onRename={renameThread}
         onSelect={selectThread}
+        section={view.kind === 'watchers' ? 'watchers' : view.kind === 'trade' ? 'trade' : 'chat'}
         threads={threads}
       />
 
@@ -266,7 +299,15 @@ function LoggedInWorkspace({ onLogout }: { readonly onLogout: () => void }) {
           </span>
         </header>
 
-        {gate ? (
+        {view.kind === 'watchers' ? (
+          <WatchersView onLogout={onLogout} onNewChat={startNewChat} onTrade={openTrade} />
+        ) : view.kind === 'trade' ? (
+          <div className="min-h-0 flex-1 overflow-y-auto" data-testid="trade-view">
+            <div className="mx-auto max-w-2xl px-4 py-8">
+              <KiteTradeCard apiKey={broker?.publisherApiKey ?? null} prefill={tradePrefill} />
+            </div>
+          </div>
+        ) : gate ? (
           <ConnectScreen
             busy={brokerBusy}
             notice={brokerNotice}

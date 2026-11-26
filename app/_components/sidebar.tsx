@@ -1,27 +1,43 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { PanelLeftCloseIcon, PanelLeftOpenIcon, SquarePenIcon, Trash2Icon } from 'lucide-react';
+import {
+  ArrowRightLeftIcon,
+  PanelLeftCloseIcon,
+  PanelLeftOpenIcon,
+  RadarIcon,
+  SquarePenIcon,
+  Trash2Icon,
+} from 'lucide-react';
 import { Logomark, Wordmark } from '@/components/brand';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { ThreadSummary } from '@/lib/client/threads-api';
 import { EditableTitle } from './editable-title';
+import { SiteFooter } from './site-footer';
 
 const RAIL_COLLAPSED_KEY = 'slash-kite:sidebar-collapsed';
 
-/** Navigation rail: "New chat" + the user's chat history, newest first. */
+export type SidebarSection = 'chat' | 'watchers' | 'trade';
+
+/** Navigation rail: "New chat", the Watchers and Trade panes, then the chat history, newest first. */
 export function Sidebar({
   threads,
   activeId,
+  section,
   onNewChat,
+  onOpenWatchers,
+  onOpenTrade,
   onSelect,
   onDelete,
   onRename,
 }: {
   readonly threads: ThreadSummary[];
   readonly activeId: string;
+  readonly section: SidebarSection;
   readonly onNewChat: () => void;
+  readonly onOpenWatchers: () => void;
+  readonly onOpenTrade: () => void;
   readonly onSelect: (id: string) => void;
   readonly onDelete: (id: string) => void;
   readonly onRename: (id: string, title: string) => void | Promise<void>;
@@ -75,6 +91,26 @@ export function Sidebar({
         <Button aria-label="New chat" className="mt-2" onClick={onNewChat} size="icon-sm" title="New chat" variant="ghost">
           <SquarePenIcon className="size-4" />
         </Button>
+        <Button
+          aria-label="Watchers"
+          className={cn('mt-1', section === 'watchers' && 'bg-foreground/10')}
+          onClick={onOpenWatchers}
+          size="icon-sm"
+          title="Watchers"
+          variant="ghost"
+        >
+          <RadarIcon className="size-4" />
+        </Button>
+        <Button
+          aria-label="Trade on Kite"
+          className={cn('mt-1', section === 'trade' && 'bg-foreground/10')}
+          onClick={onOpenTrade}
+          size="icon-sm"
+          title="Trade on Kite"
+          variant="ghost"
+        >
+          <ArrowRightLeftIcon className="size-4" />
+        </Button>
       </div>
 
       <div
@@ -103,6 +139,26 @@ export function Sidebar({
         <div className="px-3 pt-2">
           <Button className="w-full justify-start" onClick={onNewChat} size="sm" variant="secondary">
             <SquarePenIcon className="size-4" /> New chat
+          </Button>
+          <Button
+            aria-current={section === 'watchers' ? 'page' : undefined}
+            className={cn('mt-2 w-full justify-start', section === 'watchers' && 'bg-foreground/10')}
+            data-testid="nav-watchers"
+            onClick={onOpenWatchers}
+            size="sm"
+            variant="ghost"
+          >
+            <RadarIcon className="size-4" /> Watchers
+          </Button>
+          <Button
+            aria-current={section === 'trade' ? 'page' : undefined}
+            className={cn('w-full justify-start', section === 'trade' && 'bg-foreground/10')}
+            data-testid="nav-trade"
+            onClick={onOpenTrade}
+            size="sm"
+            variant="ghost"
+          >
+            <ArrowRightLeftIcon className="size-4" /> Trade on Kite
           </Button>
         </div>
 
@@ -149,6 +205,10 @@ export function Sidebar({
             })
           )}
         </nav>
+
+        <div className="border-t px-4 py-3">
+          <SiteFooter compact />
+        </div>
       </div>
     </aside>
   );

@@ -1,4 +1,4 @@
-import { date, pgTable, text, timestamp, uuid, bigserial } from 'drizzle-orm/pg-core';
+import { bigserial, boolean, date, integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 /**
  * Tables OWNED BY THE /markets KITE MCP (plan D15: one database, shared). They
@@ -47,5 +47,55 @@ export const brokerConnections = pgTable('broker_connections', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+export type WatcherStatus = 'ARMED' | 'PAUSED' | 'ERROR' | 'EXPIRED' | 'CANCELLED';
+export type WatcherPausedBy = 'user' | 'broker';
+
+/**
+ * Watchers: condition scripts the MCP's sweeper runs during market hours.
+ * CREATED only by the MCP's `create_watcher` tool; this app lists them and
+ * flips `status` (pause / resume / cancel) — it never writes a script.
+ */
+export const watchers = pgTable('watchers', {
+  id: text('id').primaryKey(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  symbol: text('symbol').notNull(),
+  label: text('label').notNull(),
+  script: text('script').notNull(),
+  market: text('market').notNull(),
+  checkEveryS: integer('check_every_s').notNull(),
+  status: text('status').$type<WatcherStatus>().notNull(),
+  statusReason: text('status_reason'),
+  pausedBy: text('paused_by').$type<WatcherPausedBy>(),
+  baselineDone: boolean('baseline_done').notNull().default(false),
+  latched: boolean('latched').notNull().default(false),
+  lastMet: boolean('last_met'),
+  lastValue: text('last_value'),
+  lastDetail: text('last_detail'),
+  lastError: text('last_error'),
+  errorCount: integer('error_count').notNull().default(0),
+  lastCheckedAt: timestamp('last_checked_at', { withTimezone: true }),
+  lastFiredAt: timestamp('last_fired_at', { withTimezone: true }),
+  firedCount: integer('fired_count').notNull().default(0),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** One row per alert a watcher raised (written by the MCP's sweeper). */
+export const watcherFires = pgTable('watcher_fires', {
+  id: text('id').primaryKey(),
+  watcherId: text('watcher_id')
+    .notNull()
+    .references(() => watchers.id, { onDelete: 'cascade' }),
+  firedAt: timestamp('fired_at', { withTimezone: true }).notNull().defaultNow(),
+  value: text('value'),
+  detail: text('detail'),
+  emailed: boolean('emailed').notNull().default(false),
+});
+
 export type UserRow = typeof users.$inferSelect;
 export type BrokerConnectionRow = typeof brokerConnections.$inferSelect;
+export type WatcherRow = typeof watchers.$inferSelect;
+export type WatcherFireRow = typeof watcherFires.$inferSelect;
