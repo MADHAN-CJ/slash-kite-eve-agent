@@ -1,22 +1,26 @@
-import { createHash, randomBytes } from 'node:crypto';
-import { and, eq, gt, lt, sql } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
+import { sql } from 'drizzle-orm';
+import { SignJWT } from 'jose';
 import { db } from '../db/client';
 import { decryptSecret, encryptSecret } from '../db/crypto';
-import { mcpAuthTxns, mcpClients, mcpGrants } from '../db/schema';
-import { deleteGrant, getGrant, saveGrant, type GrantTokens } from './grants';
+import { mcpGrants } from '../db/schema';
+import { deleteGrant, getGrant, type GrantTokens } from './grants';
 
 /**
- * OAuth 2.1 client for the Kite MCP (plan D3/D4). This app is a public
- * client (PKCE S256, no client secret) registered once per MCP origin via
- * dynamic client registration. Every app user runs the authorization-code
- * flow against the MCP's own login page; the resulting access/refresh pair
- * is stored per user and refreshed here. The MCP is never modified.
+ * Trusted-app access to the /markets Kite MCP (plan D16). This app and the
+ * MCP share one database, so an app user IS an MCP user (same `users` row).
+ * Instead of sending the user through the MCP's own login page, the server
+ * mints the user's MCP access token with the RFC 7523 JWT-bearer grant: a
+ * short-lived assertion signed with a secret shared with the MCP, naming the
+ * user (`sub`) and this confidential client. The MCP verifies it and issues an
+ * access token (1 h, no refresh token) which is cached per user and re-minted
+ * on demand. The user never sees any of this.
  */
 
 export class McpOAuthError extends Error {
   constructor(
     message: string,
-    public readonly code: 'not_connected' | 'refresh_failed' | 'exchange_failed' | 'discovery_failed' | 'invalid_state',
+    public readonly code: 'not_configured' | 'discovery_failed' | 'mint_failed',
   ) {
     super(message);
   }
@@ -24,26 +28,38 @@ export class McpOAuthError extends Error {
 
 export interface AsMetadata {
   issuer: string;
-  authorization_endpoint: string;
   token_endpoint: string;
-  registration_endpoint?: string;
-  scopes_supported?: string[];
-  code_challenge_methods_supported?: string[];
+  grant_types_supported?: string[];
 }
 
 export const SCOPE = 'kite:read';
-const TXN_TTL_MS = 10 * 60 * 1000;
-/** Refresh when the access token has less than this left. */
+export const JWT_BEARER = 'urn:ietf:params:oauth:grant-type:jwt-bearer';
+/** Re-mint when the cached token has less than this left. */
 const REFRESH_SKEW_MS = 2 * 60 * 1000;
-const CLIENT_NAME = '/markets · Kite edition on eve';
+const ASSERTION_TTL_S = 60;
 
 export function mcpIssuer(): string {
   return (process.env.KITE_MCP_URL ?? 'https://mcp.slash.markets').replace(/\/$/, '');
 }
 
-export function redirectUri(): string {
-  const base = (process.env.APP_BASE_URL ?? 'http://localhost:3000').replace(/\/$/, '');
-  return `${base}/api/mcp/callback`;
+interface TrustedClient {
+  clientId: string;
+  clientSecret: string;
+  assertionKey: Uint8Array;
+}
+
+/** The confidential client the MCP knows this deployment as (its env: ZAP_KITE_MCP_TRUSTED_CLIENT_*). */
+export function trustedClient(): TrustedClient {
+  const clientId = process.env.MCP_TRUSTED_CLIENT_ID?.trim();
+  const clientSecret = process.env.MCP_TRUSTED_CLIENT_SECRET?.trim();
+  const assertionSecret = process.env.MCP_ASSERTION_SECRET?.trim();
+  if (!clientId || !clientSecret || !assertionSecret || assertionSecret.length < 32) {
+    throw new McpOAuthError(
+      'MCP_TRUSTED_CLIENT_ID, MCP_TRUSTED_CLIENT_SECRET and MCP_ASSERTION_SECRET (≥32 chars) must be set.',
+      'not_configured',
+    );
+  }
+  return { clientId, clientSecret, assertionKey: new TextEncoder().encode(assertionSecret) };
 }
 
 // --- Discovery (RFC 8414; falls back through RFC 9728 protected-resource metadata) ---
@@ -51,8 +67,8 @@ export function redirectUri(): string {
 const metadataCache = new Map<string, { value: AsMetadata; at: number }>();
 const METADATA_TTL_MS = 60 * 60 * 1000;
 
-async function fetchJson<T>(url: string, init?: RequestInit): Promise<T | null> {
-  const res = await fetch(url, { ...init, signal: AbortSignal.timeout(15_000) });
+async function fetchJson<T>(url: string): Promise<T | null> {
+  const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
   if (!res.ok) return null;
   return (await res.json()) as T;
 }
@@ -67,103 +83,47 @@ export async function discover(issuer = mcpIssuer()): Promise<AsMetadata> {
     const server = prm?.authorization_servers?.[0]?.replace(/\/$/, '');
     if (server) as = await fetchJson<AsMetadata>(`${server}/.well-known/oauth-authorization-server`);
   }
-  if (!as?.authorization_endpoint || !as.token_endpoint) {
+  if (!as?.token_endpoint) {
     throw new McpOAuthError(`Could not discover the OAuth server at ${issuer}.`, 'discovery_failed');
   }
   metadataCache.set(issuer, { value: as, at: Date.now() });
   return as;
 }
 
-// --- Client registration (RFC 7591), once per issuer ---
+// --- Minting (RFC 7523 §2.1 jwt-bearer) ---
 
-interface ClientRecord {
-  clientId: string;
-  clientSecret: string | null;
-}
-
-export async function ensureClient(issuer = mcpIssuer()): Promise<ClientRecord> {
-  const uri = redirectUri();
-  const existing = await db().query.mcpClients.findFirst({ where: eq(mcpClients.issuer, issuer) });
-  if (existing && existing.redirectUri === uri) {
-    return { clientId: existing.clientId, clientSecret: existing.clientSecretEnc ? decryptSecret(existing.clientSecretEnc) : null };
-  }
-  const as = await discover(issuer);
-  if (!as.registration_endpoint) {
-    throw new McpOAuthError('The OAuth server does not offer dynamic client registration.', 'discovery_failed');
-  }
-  const res = await fetch(as.registration_endpoint, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      client_name: CLIENT_NAME,
-      redirect_uris: [uri],
-      grant_types: ['authorization_code', 'refresh_token'],
-      response_types: ['code'],
-      token_endpoint_auth_method: 'none',
-      scope: SCOPE,
-    }),
-    signal: AbortSignal.timeout(15_000),
-  });
-  const body = (await res.json().catch(() => null)) as { client_id?: string; client_secret?: string; error?: string } | null;
-  if (!res.ok || !body?.client_id) {
-    throw new McpOAuthError(`Client registration failed (${res.status}${body?.error ? `: ${body.error}` : ''}).`, 'discovery_failed');
-  }
-  const values = {
-    clientId: body.client_id,
-    clientSecretEnc: body.client_secret ? encryptSecret(body.client_secret) : null,
-    redirectUri: uri,
-    registeredAt: new Date(),
-  };
-  await db()
-    .insert(mcpClients)
-    .values({ issuer, ...values })
-    .onConflictDoUpdate({ target: mcpClients.issuer, set: values });
-  return { clientId: body.client_id, clientSecret: body.client_secret ?? null };
-}
-
-// --- Authorization code + PKCE ---
-
-const b64url = (buf: Buffer) => buf.toString('base64url');
-
-/** Build the authorize URL for a user; the PKCE verifier stays in mcp_auth_txns. */
-export async function startAuthorization(userId: string, issuer = mcpIssuer()): Promise<string> {
-  const [as, client] = await Promise.all([discover(issuer), ensureClient(issuer)]);
-  const state = b64url(randomBytes(24));
-  const verifier = b64url(randomBytes(48));
-  const challenge = b64url(createHash('sha256').update(verifier).digest());
-  await db().delete(mcpAuthTxns).where(and(eq(mcpAuthTxns.userId, userId), lt(mcpAuthTxns.expiresAt, new Date())));
-  await db().insert(mcpAuthTxns).values({
-    state,
-    userId,
-    issuer,
-    codeVerifier: verifier,
-    expiresAt: new Date(Date.now() + TXN_TTL_MS),
-  });
-  const url = new URL(as.authorization_endpoint);
-  url.searchParams.set('response_type', 'code');
-  url.searchParams.set('client_id', client.clientId);
-  url.searchParams.set('redirect_uri', redirectUri());
-  url.searchParams.set('scope', SCOPE);
-  url.searchParams.set('state', state);
-  url.searchParams.set('code_challenge', challenge);
-  url.searchParams.set('code_challenge_method', 'S256');
-  url.searchParams.set('resource', `${issuer}/`);
-  return url.toString();
+/** The signed assertion for one user: 60 s life, single-use `jti`, audience = the MCP issuer. */
+export async function buildAssertion(userId: string, issuer = mcpIssuer()): Promise<string> {
+  const client = trustedClient();
+  return new SignJWT({ client_id: client.clientId, resource: `${issuer}/`, scope: SCOPE })
+    .setProtectedHeader({ alg: 'HS256', typ: 'oauth-id-jag+jwt' })
+    .setIssuer(client.clientId)
+    .setSubject(userId)
+    .setAudience(issuer)
+    .setJti(randomUUID())
+    .setIssuedAt()
+    .setExpirationTime(`${ASSERTION_TTL_S}s`)
+    .sign(client.assertionKey);
 }
 
 interface TokenResponse {
   access_token?: string;
-  refresh_token?: string;
   expires_in?: number;
   scope?: string;
   error?: string;
   error_description?: string;
 }
 
-async function tokenRequest(issuer: string, params: Record<string, string>): Promise<TokenResponse & { ok: boolean; status: number }> {
-  const [as, client] = await Promise.all([discover(issuer), ensureClient(issuer)]);
-  const form = new URLSearchParams({ ...params, client_id: client.clientId });
-  if (client.clientSecret) form.set('client_secret', client.clientSecret);
+export async function mintAccessToken(userId: string, issuer = mcpIssuer()): Promise<GrantTokens> {
+  const [as, client, assertion] = await Promise.all([discover(issuer), Promise.resolve(trustedClient()), buildAssertion(userId, issuer)]);
+  const form = new URLSearchParams({
+    grant_type: JWT_BEARER,
+    assertion,
+    client_id: client.clientId,
+    client_secret: client.clientSecret,
+    scope: SCOPE,
+    resource: `${issuer}/`,
+  });
   const res = await fetch(as.token_endpoint, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -171,136 +131,71 @@ async function tokenRequest(issuer: string, params: Record<string, string>): Pro
     signal: AbortSignal.timeout(15_000),
   });
   const body = ((await res.json().catch(() => null)) as TokenResponse | null) ?? {};
-  return { ...body, ok: res.ok, status: res.status };
-}
-
-function toGrant(t: TokenResponse): GrantTokens {
-  if (!t.access_token) throw new McpOAuthError('Token response had no access token.', 'exchange_failed');
+  if (!res.ok || !body.access_token) {
+    throw new McpOAuthError(
+      `The MCP refused to issue a token (${res.status}${body.error ? `: ${body.error}` : ''}${body.error_description ? ` — ${body.error_description}` : ''}).`,
+      'mint_failed',
+    );
+  }
   return {
-    accessToken: t.access_token,
-    refreshToken: t.refresh_token ?? null,
-    accessExpiresAt: new Date(Date.now() + (t.expires_in ?? 3600) * 1000),
-    scope: t.scope ?? null,
+    accessToken: body.access_token,
+    accessExpiresAt: new Date(Date.now() + (body.expires_in ?? 3600) * 1000),
+    scope: body.scope ?? null,
   };
 }
 
-/** Callback: validate state, exchange the code, store the grant. Returns the user id. */
-export async function completeAuthorization(state: string, code: string): Promise<string> {
-  const txn = await db().query.mcpAuthTxns.findFirst({
-    where: and(eq(mcpAuthTxns.state, state), gt(mcpAuthTxns.expiresAt, new Date())),
-  });
-  if (!txn) throw new McpOAuthError('This sign-in link has expired — start again from the app.', 'invalid_state');
-  await db().delete(mcpAuthTxns).where(eq(mcpAuthTxns.state, state));
-  const t = await tokenRequest(txn.issuer, {
-    grant_type: 'authorization_code',
-    code,
-    redirect_uri: redirectUri(),
-    code_verifier: txn.codeVerifier,
-  });
-  if (!t.ok) {
-    throw new McpOAuthError(`Token exchange failed (${t.status}${t.error ? `: ${t.error}` : ''}).`, 'exchange_failed');
-  }
-  await saveGrant(txn.userId, txn.issuer, toGrant(t));
-  return txn.userId;
-}
-
-// --- Access tokens for the connection (refresh serialized across processes) ---
+// --- Access tokens for the connection (minting serialized across processes) ---
 
 const inflight = new Map<string, Promise<string>>();
 
-function needsRefresh(expiresAt: Date): boolean {
-  return expiresAt.getTime() - Date.now() <= REFRESH_SKEW_MS;
+function fresh(expiresAt: Date): boolean {
+  return expiresAt.getTime() - Date.now() > REFRESH_SKEW_MS;
 }
 
 /**
- * A usable access token for the user, refreshing when it is about to expire.
- *
- * The MCP rotates the refresh token on every use, so two refreshes of the
- * same grant can never both succeed. Callers run in many processes (vitest
- * workers, several eve runtime instances), so an in-memory single-flight is
- * not enough: the refresh runs inside a transaction holding `SELECT … FOR
- * UPDATE` on the grant row. A process that arrives second blocks on the row,
- * re-reads it, finds the fresh token the winner stored, and returns that
- * instead of refreshing again — or marking the grant expired by mistake.
- *
- * Throws McpOAuthError('not_connected') when there is no grant, and
- * 'refresh_failed' (grant marked expired) when the MCP rejects the refresh —
- * both mean "the user must reconnect /markets", never a silent fallback.
+ * A usable MCP access token for the user: the cached one while it has more
+ * than two minutes left, otherwise a freshly minted one. Minting is
+ * serialized per user across processes with a transaction-scoped advisory
+ * lock, so a burst of parallel tool calls (vitest workers, several eve
+ * instances) produces one token, not one per caller. Failures are
+ * configuration/server problems and surface as McpOAuthError — there is no
+ * user action that fixes them, unlike the Kite session (see lib/server/broker).
  */
 export async function accessTokenFor(userId: string): Promise<string> {
   const grant = await getGrant(userId);
-  if (!grant || grant.status !== 'active') {
-    throw new McpOAuthError('Not connected to /markets — reconnect from the app.', 'not_connected');
-  }
-  if (!needsRefresh(grant.accessExpiresAt)) return grant.accessToken;
+  if (grant && fresh(grant.accessExpiresAt)) return grant.accessToken;
 
   const pending = inflight.get(userId);
   if (pending) return pending;
-  const work = refreshUnderLock(userId).finally(() => inflight.delete(userId));
+  const work = mintUnderLock(userId).finally(() => inflight.delete(userId));
   inflight.set(userId, work);
   return work;
 }
 
-async function refreshUnderLock(userId: string): Promise<string> {
+async function mintUnderLock(userId: string): Promise<string> {
+  const issuer = mcpIssuer();
   return db().transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`mcp-grant:${userId}`}))`);
     const locked = await tx.execute(sql`
-      select issuer, access_token_enc, refresh_token_enc, access_expires_at, status
-      from ${mcpGrants} where ${mcpGrants.userId} = ${userId} for update`);
-    const row = locked.rows[0] as
-      | { issuer: string; access_token_enc: string; refresh_token_enc: string | null; access_expires_at: Date | string; status: string }
-      | undefined;
-    if (!row || row.status !== 'active') {
-      throw new McpOAuthError('Not connected to /markets — reconnect from the app.', 'not_connected');
-    }
-    const expiresAt = new Date(row.access_expires_at);
-    // Another process refreshed while we waited for the lock: use its token.
-    if (!needsRefresh(expiresAt)) return decryptSecret(row.access_token_enc);
-    const refreshToken = row.refresh_token_enc ? decryptSecret(row.refresh_token_enc) : null;
-    if (!refreshToken) {
-      await tx.update(mcpGrants).set({ status: 'expired', updatedAt: new Date() }).where(eq(mcpGrants.userId, userId));
-      throw new McpOAuthError('The /markets connection expired — reconnect from the app.', 'refresh_failed');
-    }
-    const t = await tokenRequest(row.issuer, { grant_type: 'refresh_token', refresh_token: refreshToken });
-    if (!t.ok) {
-      await tx.update(mcpGrants).set({ status: 'expired', updatedAt: new Date() }).where(eq(mcpGrants.userId, userId));
-      throw new McpOAuthError(`The /markets connection expired (${t.error ?? t.status}) — reconnect from the app.`, 'refresh_failed');
-    }
-    const next = toGrant(t);
-    // Servers that don't rotate keep the old refresh token valid.
-    if (!next.refreshToken) next.refreshToken = refreshToken;
-    await tx
-      .update(mcpGrants)
-      .set({
-        accessTokenEnc: encryptSecret(next.accessToken),
-        refreshTokenEnc: encryptSecret(next.refreshToken),
-        accessExpiresAt: next.accessExpiresAt,
-        scope: next.scope,
-        status: 'active',
-        updatedAt: new Date(),
-      })
-      .where(eq(mcpGrants.userId, userId));
+      select access_token_enc, access_expires_at from ${mcpGrants} where ${mcpGrants.userId} = ${userId}`);
+    const row = locked.rows[0] as { access_token_enc: string; access_expires_at: Date | string } | undefined;
+    // Another process minted while we waited for the lock: use its token.
+    if (row && fresh(new Date(row.access_expires_at))) return decryptSecret(row.access_token_enc);
+
+    const next = await mintAccessToken(userId, issuer);
+    const values = {
+      issuer,
+      accessTokenEnc: encryptSecret(next.accessToken),
+      accessExpiresAt: next.accessExpiresAt,
+      scope: next.scope,
+      updatedAt: new Date(),
+    };
+    await tx.insert(mcpGrants).values({ userId, ...values }).onConflictDoUpdate({ target: mcpGrants.userId, set: values });
     return next.accessToken;
   });
 }
 
-export interface ConnectionStatus {
-  connected: boolean;
-  issuer: string;
-  status: 'active' | 'expired' | 'none';
-  accessExpiresAt: string | null;
-}
-
-export async function connectionStatus(userId: string): Promise<ConnectionStatus> {
-  const grant = await getGrant(userId);
-  if (!grant) return { connected: false, issuer: mcpIssuer(), status: 'none', accessExpiresAt: null };
-  return {
-    connected: grant.status === 'active',
-    issuer: grant.issuer,
-    status: grant.status,
-    accessExpiresAt: grant.accessExpiresAt.toISOString(),
-  };
-}
-
-export async function disconnect(userId: string): Promise<void> {
+/** Logout: forget the cached token (the next call mints a new one). */
+export async function dropGrant(userId: string): Promise<void> {
   await deleteGrant(userId);
 }

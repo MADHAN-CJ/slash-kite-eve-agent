@@ -61,3 +61,35 @@ git-ignored `agent/skills/kite-markets/SKILL.md` is regenerated on every build.
 4. `bash scripts/deploy.sh --prod` (without `--prod` for a preview build check).
 5. Smoke: `GET /api/eve/v1/health` → `{"ok":true,"status":"ready"}`, then log in
    with a real email code and let the app connect you to /markets.
+
+## How the MCP connection works (plan §10)
+
+This app IS the /markets web app: it shares ONE Postgres with the Kite MCP. The MCP owns
+schema `public` (`users`, `otps`, `broker_connections`, `watchers`, `oauth_*`); this app owns
+schema `eve` (threads, messages, session context, a per-user MCP token cache).
+
+- **Login = MCP login.** The email code upserts the MCP's own `users` row (hashes and
+  encryption are byte-compatible with the Python MCP — `lib/server/mcp-crypto.ts`).
+- **No second login for the agent.** The server mints the user's MCP access token with the
+  RFC 7523 JWT-bearer grant: a 60 s assertion signed with `MCP_ASSERTION_SECRET`, presented by
+  the confidential client `MCP_TRUSTED_CLIENT_ID`/`_SECRET`. The MCP must be configured with
+  the same three values (`ZAP_KITE_MCP_TRUSTED_CLIENT_*`, `ZAP_KITE_MCP_ASSERTION_SECRET`).
+- **Login with Kite happens here.** `/api/broker/kite/login/start` sends the browser to
+  Zerodha; Zerodha returns to `<APP_BASE_URL>/api/broker/kite/callback` (the redirect URL
+  registered on the Kite Connect app), which stores the session in the MCP's table. Until the
+  session is `active` the chat is gated by the connect screen (skippable; a banner remains).
+
+### Local stack
+
+```sh
+docker compose up -d                 # Postgres :5439
+npm run db:mcp-init                  # the MCP's migrations (public schema)
+npm run db:migrate                   # ours (eve schema)
+npm run dev:mcp                      # the sibling MCP on :8029, trusting this app
+KITE_MCP_URL=http://127.0.0.1:8029 npm run dev
+```
+
+Checks: `npm run test:unit` · `npm run db:smoke` · `KITE_MCP_URL=http://127.0.0.1:8029 npm run
+e2e:mint-race` (one mint across 6 processes) · `npm run e2e:agent` (real model turns) ·
+`/usr/bin/python3 scripts/ui-smoke.py` (Playwright + an embedded fake Zerodha; start the dev
+server with the `KITE_*` overrides printed at the top of that script).

@@ -2,7 +2,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { eq } from 'drizzle-orm';
 import { db } from '@/agent/lib/db/client';
-import { users } from '@/agent/lib/db/schema';
+import { users } from '@/agent/lib/db/mcp-schema';
 import { accessTokenFor, mcpIssuer } from '@/agent/lib/mcp/oauth';
 import { stdoutOf } from '@/components/charts/chart-line';
 

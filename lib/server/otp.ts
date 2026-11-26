@@ -1,13 +1,15 @@
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import { db } from '@/agent/lib/db/client';
-import { otps, users } from '@/agent/lib/db/schema';
-import { otpHash } from '@/agent/lib/db/crypto';
+import { otps, users } from '@/agent/lib/db/mcp-schema';
+import { otpHash } from './mcp-crypto';
 import { HttpError } from './auth';
 import { EMAIL_FROM, loginCodeEmail } from './emails';
 
 /**
  * Email OTP login (/markets semantics): 6-digit code, 10-minute life, single
- * use, cooldown between sends. Codes are stored hashed. Without a
+ * use, cooldown between sends. Codes live in the MCP's `otps` table, hashed
+ * exactly as the MCP hashes them, and a verified login upserts the MCP's
+ * `users` row — logging in here IS logging in to the MCP (plan D15). Without a
  * RESEND_API_KEY the code is logged to the server console (dev only).
  * Dev login: when DEV_LOGIN_EMAIL + DEV_LOGIN_CODE are set (and NODE_ENV is
  * not production) that address accepts that fixed code and is never emailed.

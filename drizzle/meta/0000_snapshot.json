@@ -1,56 +1,12 @@
 {
-  "id": "7a924e1c-f00f-4528-91f8-a21adf1ca918",
+  "id": "281a6284-155e-4deb-b646-0dedab5ef309",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "public.mcp_clients": {
-      "name": "mcp_clients",
-      "schema": "",
-      "columns": {
-        "issuer": {
-          "name": "issuer",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "client_id": {
-          "name": "client_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "client_secret_enc": {
-          "name": "client_secret_enc",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "redirect_uri": {
-          "name": "redirect_uri",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "registered_at": {
-          "name": "registered_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.mcp_grants": {
+    "eve.mcp_grants": {
       "name": "mcp_grants",
-      "schema": "",
+      "schema": "eve",
       "columns": {
         "user_id": {
           "name": "user_id",
@@ -70,12 +26,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "refresh_token_enc": {
-          "name": "refresh_token_enc",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "access_expires_at": {
           "name": "access_expires_at",
           "type": "timestamp with time zone",
@@ -87,13 +37,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'active'"
         },
         "granted_at": {
           "name": "granted_at",
@@ -111,30 +54,16 @@
         }
       },
       "indexes": {},
-      "foreignKeys": {
-        "mcp_grants_user_id_users_id_fk": {
-          "name": "mcp_grants_user_id_users_id_fk",
-          "tableFrom": "mcp_grants",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.messages": {
+    "eve.messages": {
       "name": "messages",
-      "schema": "",
+      "schema": "eve",
       "columns": {
         "id": {
           "name": "id",
@@ -234,7 +163,7 @@
             }
           ],
           "isUnique": true,
-          "where": "\"messages\".\"role\" = 'assistant'",
+          "where": "\"eve\".\"messages\".\"role\" = 'assistant'",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -245,6 +174,7 @@
           "name": "messages_thread_id_threads_id_fk",
           "tableFrom": "messages",
           "tableTo": "threads",
+          "schemaTo": "eve",
           "columnsFrom": [
             "thread_id"
           ],
@@ -261,76 +191,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.otps": {
-      "name": "otps",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "email": {
-          "name": "email",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "code_hash": {
-          "name": "code_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "consumed_at": {
-          "name": "consumed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "otps_email_idx": {
-          "name": "otps_email_idx",
-          "columns": [
-            {
-              "expression": "email",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.session_context": {
+    "eve.session_context": {
       "name": "session_context",
-      "schema": "",
+      "schema": "eve",
       "columns": {
         "eve_session_id": {
           "name": "eve_session_id",
@@ -360,9 +223,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.threads": {
+    "eve.threads": {
       "name": "threads",
-      "schema": "",
+      "schema": "eve",
       "columns": {
         "id": {
           "name": "id",
@@ -460,51 +323,12 @@
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
-    },
-    "public.users": {
-      "name": "users",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "email": {
-          "name": "email",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "users_email_unique": {
-          "name": "users_email_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "email"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
     }
   },
   "enums": {},
-  "schemas": {},
+  "schemas": {
+    "eve": "eve"
+  },
   "sequences": {},
   "roles": {},
   "policies": {},

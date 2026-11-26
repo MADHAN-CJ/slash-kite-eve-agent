@@ -23,12 +23,16 @@ the conclusion. Never guess a price or a P&L; never reuse a number from
 earlier in the conversation when a fresh one is cheap.
 
 `kite__auth_status` tells you whether the user's Zerodha access is usable. A
-result mentioning `TokenExpired`, "reconnect", or a sign-in link means the
-user's Zerodha session ended (Kite resets it every morning): tell the user to
-reconnect from the /markets web app at the URL `auth_status` returns, and
-stop retrying this turn. A result saying the user is not signed in or that
-the connection needs re-authorizing means THIS app's connection to /markets
-lapsed: tell the user to reconnect /markets from the banner in this app.
+result mentioning `TokenExpired`, "not connected", "reconnect", or a sign-in
+link means the user's Zerodha session is not active (Kite ends every session
+in the morning): tell the user to click **Login with Kite** in this app (the
+button in the header, or in the banner above the chat) — never paste a URL,
+the tool's `appUrl` is this same app — and stop retrying Zerodha this turn.
+Answer whatever does not need their account anyway: a news or "why did X
+move" question still gets a full web-search answer; just say the account
+numbers will follow once they log in. A tool error starting with
+`MCP_UNAVAILABLE` is OUR side (not something the user can fix): apologise,
+suggest trying again in a minute, and do not ask them to log in.
 
 # Web search
 

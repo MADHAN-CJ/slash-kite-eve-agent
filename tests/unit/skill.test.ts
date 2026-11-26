@@ -36,7 +36,8 @@ describe('kite-markets skill', () => {
 
   it('tells the model there is no local sandbox and how to handle access errors', () => {
     expect(skill).toMatch(/no bash, no files, no local Python/);
-    expect(skill).toContain('MCP_NOT_CONNECTED');
+    expect(skill).toContain('MCP_UNAVAILABLE');
+    expect(skill).toMatch(/Login with Kite/);
     expect(skill).toContain('TokenExpired');
   });
 

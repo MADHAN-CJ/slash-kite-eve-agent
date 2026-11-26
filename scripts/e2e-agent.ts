@@ -1,14 +1,15 @@
 import 'dotenv/config';
 import { eq } from 'drizzle-orm';
 import { db } from '#lib/db/client.js';
-import { users } from '#lib/db/schema.js';
+import { users } from '#lib/db/mcp-schema.js';
 
 /**
- * P3 e2e: with `npm run dev` running, logs in, connects the MCP (staging dev
- * login), then drives two real agent sessions through the app proxy and
- * inspects the NDJSON stream: an account question must load the skill and
- * call kite__run_python; a news question must call web_search. Prints the
- * tool sequence and the final text of each. Costs real tokens.
+ * Agent e2e: with `npm run dev` running against an MCP that trusts this app
+ * (plan D16 — the token is minted silently, no connect step), logs in, reads
+ * the Zerodha status, then drives two real agent sessions through the app
+ * proxy and inspects the NDJSON stream: an account question must load the
+ * skill and call a kite__ tool; a news question must call web_search. Prints
+ * the tool sequence and the final text of each. Costs real tokens.
  */
 const APP = (process.env.APP_BASE_URL ?? 'http://localhost:3000').replace(/\/$/, '');
 const EMAIL = process.env.DEV_LOGIN_EMAIL ?? 'test@slash.markets';
@@ -23,24 +24,6 @@ function check(label: string, ok: boolean, detail = ''): void {
     process.exit(1);
   }
 }
-const form = (o: Record<string, string>) => ({
-  method: 'POST',
-  headers: { 'content-type': 'application/x-www-form-urlencoded' },
-  body: new URLSearchParams(o),
-  redirect: 'manual' as const,
-});
-
-async function connectMcp(auth: Record<string, string>) {
-  const { url } = (await (await fetch(`${APP}/api/mcp/start`, { method: 'POST', headers: auth })).json()) as { url: string };
-  const a = await fetch(url, { redirect: 'manual' });
-  const loginLoc = new URL(a.headers.get('location') ?? '', url);
-  const txn = loginLoc.searchParams.get('txn') ?? '';
-  await fetch(`${loginLoc.origin}/login/email`, form({ txn, email: EMAIL }));
-  const o = await fetch(`${loginLoc.origin}/login/otp`, form({ txn, email: EMAIL, code: CODE }));
-  const cb = await fetch(o.headers.get('location') ?? '', { redirect: 'manual' });
-  return (cb.headers.get('location') ?? '').includes('mcp=connected');
-}
-
 interface Ev {
   type: string;
   data?: Record<string, unknown>;
@@ -119,7 +102,8 @@ async function main() {
   const info = (await (await fetch(`${APP}/api/eve/v1/health`)).text()).slice(0, 60);
   check('eve health via proxy', info.length > 0, info);
 
-  check('MCP connected via OAuth', await connectMcp(auth));
+  const broker = (await (await fetch(`${APP}/api/broker`, { headers: auth })).json()) as { status?: string };
+  check('broker status route answers', typeof broker.status === 'string', `zerodha ${broker.status}`);
 
   console.log('\n— session A: account question');
   const a = await runSession(auth, 'How is my portfolio doing today? One short paragraph.');
@@ -137,7 +121,8 @@ async function main() {
   console.log('  errors:', b.errors.length ? b.errors.join(' | ').slice(0, 400) : '(none)');
   console.log('  text:', b.texts.join('\n').slice(0, 800));
   check('B: web_search called', b.tools.includes('web_search'));
-  check('B: final text cites a URL', /https?:\/\//.test(b.texts.join('')), `${b.ms} ms`);
+  // Sources render as citation cards from the tool results, so the prose need not carry raw URLs.
+  check('B: final text present', b.texts.join('').trim().length > 50, `${b.ms} ms`);
 
   const list = (await (await fetch(`${APP}/api/threads`, { headers: auth })).json()) as { threads: { eveSessionId: string; title: string | null }[] };
   check('threads persisted with titles', list.threads.filter((t) => [a.sessionId, b.sessionId].includes(t.eveSessionId) && t.title).length === 2, JSON.stringify(list.threads.map((t) => t.title)));

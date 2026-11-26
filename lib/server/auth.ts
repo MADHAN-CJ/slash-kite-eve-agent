@@ -20,7 +20,8 @@ export class HttpError extends Error {
 
 const SESSION_DAYS = 7;
 
-function jwtSecret(): Uint8Array {
+/** HS256 key for everything this server signs (session JWTs, the Kite login `state`). */
+export function sessionSigningKey(): Uint8Array {
   const value = process.env.AUTH_JWT_SECRET;
   if (!value || value.length < 16) {
     throw new Error('AUTH_JWT_SECRET must be set to a random secret of at least 16 characters.');
@@ -40,7 +41,7 @@ export async function signSessionJwt(user: SessionUser): Promise<string> {
     .setSubject(user.userId)
     .setIssuedAt()
     .setExpirationTime(`${SESSION_DAYS}d`)
-    .sign(jwtSecret());
+    .sign(sessionSigningKey());
 }
 
 /** The authenticated user for a request, or a 401 HttpError. */
@@ -49,7 +50,7 @@ export async function requireUser(req: Request): Promise<SessionUser> {
   const token = header?.startsWith('Bearer ') ? header.slice(7).trim() : null;
   if (!token) throw new HttpError(401, 'Sign in to continue.');
   try {
-    const { payload } = await jwtVerify(token, jwtSecret());
+    const { payload } = await jwtVerify(token, sessionSigningKey());
     if (!payload.sub || typeof payload.email !== 'string') throw new Error('bad claims');
     return { userId: payload.sub, email: payload.email };
   } catch {

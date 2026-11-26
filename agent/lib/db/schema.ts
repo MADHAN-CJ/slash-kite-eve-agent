@@ -1,97 +1,50 @@
 import { sql } from 'drizzle-orm';
-import { index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { index, integer, jsonb, pgSchema, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import type { Cost, MessagePart, Role, Usage } from './types';
 
 /**
- * /markets Kite-edition schema. threads/messages are written by the persist
- * hook + the eve proxy — they are the system of record for DISPLAYING
+ * Everything THIS app owns lives in schema `eve` (plan D15): the database is
+ * shared with the /markets Kite MCP, which owns `public` (see mcp-schema.ts).
+ * drizzle-kit manages only this file. threads/messages are written by the
+ * persist hook + the eve proxy — the system of record for DISPLAYING
  * conversations; eve's workflow store remains the system of record for
- * CONTINUING them. The MCP's own database is never touched: mcp_clients and
- * mcp_grants hold only what this app receives from its OAuth server.
+ * CONTINUING them. User ids point at `public.users` (the MCP's table); the
+ * foreign keys are added by hand in the migration because drizzle-kit must
+ * not learn about `public` (it would try to create those tables).
  */
 
-export const users = pgTable('users', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  email: text('email').notNull().unique(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
-
-export const otps = pgTable(
-  'otps',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    email: text('email').notNull(),
-    /** HMAC-SHA256(code:email, CREDS_HASH_PEPPER) — raw codes are never stored. */
-    codeHash: text('code_hash').notNull(),
-    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-    consumedAt: timestamp('consumed_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => [index('otps_email_idx').on(t.email)],
-);
+export const eve = pgSchema('eve');
 
 /**
- * This deployment's dynamic-client registration with the Kite MCP's OAuth
- * server, keyed by the MCP origin so staging and production can coexist.
+ * Cached MCP access token per user, minted silently with the trusted-app
+ * (RFC 7523 JWT-bearer) grant — plan D16. Deleted on app logout; re-minted on
+ * demand, so a missing row is never an error state. Decrypted only in the
+ * connection's token resolver.
  */
-export const mcpClients = pgTable('mcp_clients', {
-  issuer: text('issuer').primaryKey(),
-  clientId: text('client_id').notNull(),
-  /** AES-256-GCM; null for public clients. */
-  clientSecretEnc: text('client_secret_enc'),
-  redirectUri: text('redirect_uri').notNull(),
-  registeredAt: timestamp('registered_at', { withTimezone: true }).notNull().defaultNow(),
-});
-
-/**
- * One user's OAuth grant on the Kite MCP (access 1 h, refresh 30 d, pairs
- * rotate on refresh). Deleted on app logout — the MCP has no revocation
- * endpoint, so discarding the refresh token is how access "goes away".
- * Decrypted only in the connection's token resolver and the mcp API routes.
- */
-export const mcpGrants = pgTable('mcp_grants', {
-  userId: uuid('user_id')
-    .primaryKey()
-    .references(() => users.id, { onDelete: 'cascade' }),
+export const mcpGrants = eve.table('mcp_grants', {
+  /** → public.users.id (FK in the migration). */
+  userId: uuid('user_id').primaryKey(),
   issuer: text('issuer').notNull(),
   accessTokenEnc: text('access_token_enc').notNull(),
-  refreshTokenEnc: text('refresh_token_enc'),
   accessExpiresAt: timestamp('access_expires_at', { withTimezone: true }).notNull(),
   scope: text('scope'),
-  status: text('status').$type<'active' | 'expired'>().notNull().default('active'),
   grantedAt: timestamp('granted_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
-
-/**
- * One in-flight authorization against the MCP: the PKCE verifier never leaves
- * the server (a redirect interceptor holding `code`+`state` still cannot
- * exchange it). Rows live 10 minutes and are deleted on use.
- */
-export const mcpAuthTxns = pgTable('mcp_auth_txns', {
-  state: text('state').primaryKey(),
-  userId: uuid('user_id')
-    .notNull()
-    .references(() => users.id, { onDelete: 'cascade' }),
-  issuer: text('issuer').notNull(),
-  codeVerifier: text('code_verifier').notNull(),
-  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /**
  * Which user an eve session belongs to. WRITTEN only by the eve proxy
  * (before forwarding each send); READ by the connection's token resolver
  * and the persist hook's owner backfill. This is how the agent reaches the
- * user's MCP grant WITHOUT any secret ever entering the model context.
+ * user's MCP token WITHOUT any secret ever entering the model context.
  */
-export const sessionContext = pgTable('session_context', {
+export const sessionContext = eve.table('session_context', {
   eveSessionId: text('eve_session_id').primaryKey(),
   userId: uuid('user_id').notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const threads = pgTable(
+export const threads = eve.table(
   'threads',
   {
     id: uuid('id').primaryKey().defaultRandom(),
@@ -119,7 +72,7 @@ export const threads = pgTable(
   (t) => [index('threads_user_idx').on(t.userId)],
 );
 
-export const messages = pgTable(
+export const messages = eve.table(
   'messages',
   {
     id: uuid('id').primaryKey().defaultRandom(),
@@ -150,10 +103,7 @@ export const messages = pgTable(
   ],
 );
 
-export type UserRow = typeof users.$inferSelect;
-export type McpClientRow = typeof mcpClients.$inferSelect;
 export type McpGrantRow = typeof mcpGrants.$inferSelect;
-export type McpAuthTxnRow = typeof mcpAuthTxns.$inferSelect;
 export type SessionContextRow = typeof sessionContext.$inferSelect;
 export type ThreadRow = typeof threads.$inferSelect;
 export type MessageRow = typeof messages.$inferSelect;

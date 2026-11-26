@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Loader2Icon, LogOutIcon, PlugZapIcon } from 'lucide-react';
+import { Loader2Icon, LogInIcon, LogOutIcon } from 'lucide-react';
 import { Wordmark } from '@/components/brand';
 import { Button } from '@/components/ui/button';
 import {
@@ -12,7 +12,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { getUser, isLoggedIn, logout as apiLogout } from '@/lib/client/settings';
-import { consumeMcpReturn, getMcpStatus, SessionExpiredError, startMcpConnect, type McpStatus } from '@/lib/client/mcp';
+import {
+  type BrokerStatus,
+  consumeKiteReturn,
+  describeStatus,
+  getBrokerStatus,
+  SessionExpiredError,
+  startKiteLogin,
+} from '@/lib/client/broker';
 import {
   deleteThread as apiDeleteThread,
   renameThread as apiRenameThread,
@@ -21,22 +28,24 @@ import {
   type ThreadDetail,
   type ThreadSummary,
 } from '@/lib/client/threads-api';
+import { ConnectScreen } from './connect-screen';
 import { Login } from './login';
 import { Sidebar } from './sidebar';
 import { ThreadChat } from './thread-chat';
 
 /**
- * The workspace shell: login gate → /markets connection → sidebar (chat
- * history) + main pane (a fresh draft chat or a resumed thread).
+ * The workspace shell (plan §10 / D18): login gate → Zerodha connect screen →
+ * sidebar (chat history) + main pane (a fresh draft chat or a resumed thread).
  *
- * MCP connection (plan D4/D14): right after login, if the user has no usable
- * grant, the browser is sent ONCE (per login, sessionStorage flag) to the
- * MCP's own login page and comes back to `/?mcp=connected|error`. Any later
- * loss of the grant shows a "Reconnect /markets" banner with a manual
- * button — never an automatic redirect loop.
+ * Logging in here IS logging in to the /markets MCP (shared users table), so
+ * the only thing left to connect is the user's Zerodha session. While it is
+ * not `active` the connect screen takes the main pane; the user may skip it
+ * for the session, in which case a banner in chat keeps the Login-with-Kite
+ * button one click away. Kite sessions end every morning, so the banner is
+ * also what the user sees first thing on a new day.
  */
 
-const AUTOSTART_KEY = 'slash-kite:mcp-autostart';
+const SKIP_KEY = 'slash-kite:connect-skip';
 
 type View = { kind: 'draft' } | { kind: 'thread'; id: string };
 
@@ -64,52 +73,59 @@ export function Workspace() {
   return <LoggedInWorkspace key={authEpoch} onLogout={logout} />;
 }
 
+function skipFlag(): string {
+  return `${SKIP_KEY}:${getUser()?.id ?? ''}`;
+}
+
 function LoggedInWorkspace({ onLogout }: { readonly onLogout: () => void }) {
   const [view, setView] = useState<View>({ kind: 'draft' });
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
-  // --- /markets MCP connection ---
-  const [mcp, setMcp] = useState<McpStatus | null>(null);
-  const [mcpNotice, setMcpNotice] = useState<string | null>(null);
-  const [mcpBusy, setMcpBusy] = useState(false);
-  const refreshMcp = useCallback(async (): Promise<McpStatus | null> => {
+  // --- Zerodha connection ---
+  const [broker, setBroker] = useState<BrokerStatus | null>(null);
+  const [brokerNotice, setBrokerNotice] = useState<string | null>(null);
+  const [brokerBusy, setBrokerBusy] = useState(false);
+  const [skipped, setSkipped] = useState(false);
+  const refreshBroker = useCallback(async (): Promise<BrokerStatus | null> => {
     try {
-      const st = await getMcpStatus();
-      setMcp(st);
+      const st = await getBrokerStatus();
+      setBroker(st);
       return st;
     } catch (e) {
       if (e instanceof SessionExpiredError) onLogout();
       return null;
     }
   }, [onLogout]);
-  const connectMcp = useCallback(async () => {
-    setMcpBusy(true);
-    setMcpNotice(null);
+  const loginKite = useCallback(async () => {
+    setBrokerBusy(true);
+    setBrokerNotice(null);
     try {
-      await startMcpConnect(); // navigates away on success
+      await startKiteLogin(); // navigates away on success
     } catch (e) {
-      setMcpBusy(false);
+      setBrokerBusy(false);
       if (e instanceof SessionExpiredError) return onLogout();
-      setMcpNotice(e instanceof Error ? e.message : 'Could not start the /markets sign-in.');
+      setBrokerNotice(e instanceof Error ? e.message : 'Could not start the Zerodha login.');
     }
   }, [onLogout]);
+  const skipConnect = useCallback(() => {
+    try {
+      sessionStorage.setItem(skipFlag(), '1');
+    } catch {
+      // storage unavailable — skip for this render only
+    }
+    setSkipped(true);
+  }, []);
   useEffect(() => {
-    const back = consumeMcpReturn();
-    if (back?.outcome === 'error') setMcpNotice(`/markets sign-in did not complete (${back.reason}). Try again.`);
-    void refreshMcp().then((st) => {
-      if (!st || st.connected) return;
-      if (back) return; // just came back from the MCP — never bounce again automatically
-      const user = getUser();
-      const flag = `${AUTOSTART_KEY}:${user?.id ?? ''}`;
-      try {
-        if (sessionStorage.getItem(flag) === '1') return;
-        sessionStorage.setItem(flag, '1');
-      } catch {
-        // storage unavailable — still connect once this render
-      }
-      void connectMcp();
-    });
-  }, [refreshMcp, connectMcp]);
+    const back = consumeKiteReturn();
+    if (back?.outcome === 'error') setBrokerNotice(`Zerodha login did not complete: ${back.reason}`);
+    try {
+      setSkipped(sessionStorage.getItem(skipFlag()) === '1');
+    } catch {
+      // storage unavailable
+    }
+    void refreshBroker();
+  }, [refreshBroker]);
+  const connected = broker?.status === 'active';
 
   // --- Threads (chat history) ---
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
@@ -124,8 +140,8 @@ function LoggedInWorkspace({ onLogout }: { readonly onLogout: () => void }) {
   }, []);
   const onTurnSettled = useCallback(() => {
     void refreshThreads();
-    void refreshMcp();
-  }, [refreshThreads, refreshMcp]);
+    void refreshBroker();
+  }, [refreshThreads, refreshBroker]);
   useEffect(() => {
     void refreshThreads();
   }, [refreshThreads]);
@@ -205,6 +221,9 @@ function LoggedInWorkspace({ onLogout }: { readonly onLogout: () => void }) {
 
   const sidebarActiveId = view.kind === 'thread' ? view.id : (adoptedThreadId ?? '');
 
+  // The connect screen owns the main pane until Zerodha is active or the user skips it.
+  const gate = broker !== null && !connected && !skipped;
+
   return (
     <main className="flex h-dvh overflow-hidden bg-background text-foreground">
       <Sidebar
@@ -224,16 +243,16 @@ function LoggedInWorkspace({ onLogout }: { readonly onLogout: () => void }) {
           </span>
           <span className="flex items-center gap-1">
             <Button
-              data-testid="mcp-status"
-              disabled={mcpBusy || mcp?.connected}
-              onClick={() => void connectMcp()}
+              data-testid="broker-status"
+              disabled={brokerBusy || connected}
+              onClick={() => void loginKite()}
               size="sm"
-              title={mcp?.connected ? `Connected to ${mcp.issuer}` : 'Connect to /markets'}
+              title={broker ? describeStatus(broker) : 'Checking Zerodha…'}
               variant="ghost"
             >
-              <span className={mcp?.connected ? 'size-2 rounded-full bg-[#17be5f]' : 'size-2 rounded-full bg-destructive'} />
-              {mcp === null ? 'Checking…' : mcp.connected ? '/markets connected' : 'Connect /markets'}
-              {mcpBusy ? <Loader2Icon className="size-4 animate-spin" /> : <PlugZapIcon className="size-4" />}
+              <span className={connected ? 'size-2 rounded-full bg-[#17be5f]' : 'size-2 rounded-full bg-destructive'} />
+              {broker === null ? 'Checking…' : connected ? 'Zerodha connected' : 'Login with Kite'}
+              {brokerBusy ? <Loader2Icon className="size-4 animate-spin" /> : <LogInIcon className="size-4" />}
             </Button>
             <Button
               aria-label="Sign out"
@@ -247,50 +266,59 @@ function LoggedInWorkspace({ onLogout }: { readonly onLogout: () => void }) {
           </span>
         </header>
 
-        {mcp && !mcp.connected ? (
-          <div
-            className="flex items-center justify-between gap-3 border-b bg-destructive/5 px-4 py-2 text-sm"
-            data-testid="mcp-banner"
-            role="alert"
-          >
-            <span>
-              {mcpNotice ??
-                (mcp.status === 'expired'
-                  ? 'Your /markets connection expired — the analyst can’t reach your Zerodha data until you reconnect.'
-                  : 'Connect to /markets so the analyst can read your Zerodha account and market data.')}
-            </span>
-            <Button disabled={mcpBusy} onClick={() => void connectMcp()} size="sm" variant="outline">
-              {mcpBusy ? <Loader2Icon className="size-4 animate-spin" /> : null}
-              {mcp.status === 'expired' ? 'Reconnect' : 'Connect'}
-            </Button>
-          </div>
-        ) : mcpNotice ? (
-          <div className="border-b bg-muted px-4 py-2 text-sm" role="status">{mcpNotice}</div>
-        ) : null}
-
-        {view.kind === 'draft' ? (
-          <ThreadChat
-            history={[]}
-            key={`draft:${draftEpoch}`}
-            onSessionCreated={(sid) => {
-              setDraftSessionId(sid);
-              void refreshThreads();
-            }}
-            onTurnSettled={onTurnSettled}
-            starters={STARTERS}
-          />
-        ) : detail ? (
-          <ThreadChat
-            history={detail.messages}
-            key={`thread:${detail.id}`}
-            onTurnSettled={onTurnSettled}
-            session={{ sessionId: detail.eveSessionId, streamIndex: detail.streamIndex }}
-            starters={STARTERS}
+        {gate ? (
+          <ConnectScreen
+            busy={brokerBusy}
+            notice={brokerNotice}
+            onLogin={() => void loginKite()}
+            onSkip={skipConnect}
+            status={broker}
           />
         ) : (
-          <div className="flex flex-1 items-center justify-center text-muted-foreground text-sm">
-            {detailError ?? 'Loading chat…'}
-          </div>
+          <>
+            {broker && !connected ? (
+              <div
+                className="flex items-center justify-between gap-3 border-b bg-destructive/5 px-4 py-2 text-sm"
+                data-testid="broker-banner"
+                role="alert"
+              >
+                <span>{brokerNotice ?? describeStatus(broker)}</span>
+                <Button disabled={brokerBusy} onClick={() => void loginKite()} size="sm" variant="outline">
+                  {brokerBusy ? <Loader2Icon className="size-4 animate-spin" /> : null}
+                  Login with Kite
+                </Button>
+              </div>
+            ) : brokerNotice ? (
+              <div className="border-b bg-muted px-4 py-2 text-sm" role="status">
+                {brokerNotice}
+              </div>
+            ) : null}
+
+            {view.kind === 'draft' ? (
+              <ThreadChat
+                history={[]}
+                key={`draft:${draftEpoch}`}
+                onSessionCreated={(sid) => {
+                  setDraftSessionId(sid);
+                  void refreshThreads();
+                }}
+                onTurnSettled={onTurnSettled}
+                starters={STARTERS}
+              />
+            ) : detail ? (
+              <ThreadChat
+                history={detail.messages}
+                key={`thread:${detail.id}`}
+                onTurnSettled={onTurnSettled}
+                session={{ sessionId: detail.eveSessionId, streamIndex: detail.streamIndex }}
+                starters={STARTERS}
+              />
+            ) : (
+              <div className="flex flex-1 items-center justify-center text-muted-foreground text-sm">
+                {detailError ?? 'Loading chat…'}
+              </div>
+            )}
+          </>
         )}
       </section>
 
@@ -300,9 +328,8 @@ function LoggedInWorkspace({ onLogout }: { readonly onLogout: () => void }) {
             <DialogTitle>Sign out</DialogTitle>
             <DialogDescription>
               Sign out of <Wordmark />
-              {getUser()?.email ? ` (${getUser()?.email})` : ''}? Your chats stay on the server — logging
-              back in with the same email brings them back. Your /markets connection is released and
-              re-established on the next login.
+              {getUser()?.email ? ` (${getUser()?.email})` : ''}? Your chats and your Zerodha connection stay
+              with your /markets account — logging back in with the same email brings them back.
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-end gap-2">
