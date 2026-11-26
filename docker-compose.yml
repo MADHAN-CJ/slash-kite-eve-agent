@@ -22,5 +22,56 @@ services:
       timeout: 3s
       retries: 10
 
+
+  # The sibling Kite MCP, run from ../zap-kite-mcp/mcp inside Linux so its
+  # bubblewrap script runner works on a Mac (plan §10 local stack). Opt-in:
+  #   docker compose --profile mcp up -d --build
+  # Privileged because bubblewrap needs user namespaces, which Docker's default
+  # seccomp profile blocks — local development only. Secrets are interpolated
+  # from this repo's .env (MCP_* names) so the app and the MCP agree; the Kite
+  # key is the same one the app's Login-with-Kite uses.
+  mcp:
+    profiles: ["mcp"]
+    build:
+      context: ../zap-kite-mcp/mcp
+      dockerfile: ../../slash-kite-eve-agent/docker/mcp.Dockerfile
+    container_name: slash-kite-eve-mcp
+    privileged: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8029:8029"
+    volumes:
+      - ../zap-kite-mcp/mcp:/src:ro
+      - slash_kite_eve_mcp_state:/var/lib/zapkite
+    environment:
+      DATABASE_URL: postgresql://slashkite:slashkite@postgres:5432/slash_kite_eve
+      ZAP_KITE_MCP_PUBLIC_URL: http://127.0.0.1:8029
+      ZAP_KITE_MCP_HOST: 0.0.0.0
+      ZAP_KITE_MCP_PORT: "8029"
+      ZAP_KITE_MCP_APP_URL: ${APP_BASE_URL:-http://localhost:3000}
+      ZAP_KITE_MCP_STATE_DIR: /var/lib/zapkite
+      KITE_API_KEY: ${KITE_API_KEY}
+      KITE_API_SECRET: ${KITE_API_SECRET}
+      SESSION_SECRET: ${MCP_SESSION_SECRET}
+      CREDS_ENCRYPTION_KEY: ${MCP_CREDS_ENCRYPTION_KEY}
+      ZAP_KITE_MCP_TRUSTED_CLIENT_ID: ${MCP_TRUSTED_CLIENT_ID}
+      ZAP_KITE_MCP_TRUSTED_CLIENT_SECRET: ${MCP_TRUSTED_CLIENT_SECRET}
+      ZAP_KITE_MCP_ASSERTION_SECRET: ${MCP_ASSERTION_SECRET}
+      DEV_LOGIN_EMAIL: ${DEV_LOGIN_EMAIL:-}
+      DEV_LOGIN_CODE: ${DEV_LOGIN_CODE:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      SWEEP_SECRET: local-dev-sweep-secret
+    command: >
+      bash -c "uv sync --frozen --no-dev --directory /src
+      && exec uv run --directory /src zap-kite-mcp"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8029/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+
 volumes:
   slash_kite_eve_pgdata:
+  slash_kite_eve_mcp_state:

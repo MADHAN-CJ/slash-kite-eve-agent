@@ -16,17 +16,18 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "build:eve": "eve build",
     "dev:eve": "eve dev",
-    "dev:mcp": "bash scripts/local-mcp.sh",
+    "dev:mcp": "docker compose --profile mcp up -d --build mcp",
     "start:eve": "eve start",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
+    "db:migrate": "tsx scripts/db-migrate.ts",
     "db:mcp-init": "tsx scripts/db-mcp-init.ts",
     "db:smoke": "tsx scripts/db-smoke.ts",
     "e2e:agent": "tsx scripts/e2e-agent.ts",
     "e2e:mint-race": "tsx scripts/e2e-mint-race.ts",
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
-    "test:indicators": "vitest run tests/indicators"
+    "test:indicators": "vitest run tests/indicators",
+    "dev:mcp:logs": "docker compose logs -f mcp"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.10",

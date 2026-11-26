@@ -13,6 +13,6 @@ export async function POST(req: Request) {
     const token = await signSessionJwt(user);
     return Response.json({ token, user: { id: user.userId, email: user.email } });
   } catch (e) {
-    return errorResponse(e);
+    return errorResponse(e, req);
   }
 }

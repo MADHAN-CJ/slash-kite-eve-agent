@@ -58,11 +58,19 @@ export async function requireUser(req: Request): Promise<SessionUser> {
   }
 }
 
-/** Route-handler wrapper: map HttpError to a JSON response, 500 otherwise. */
-export function errorResponse(e: unknown): Response {
+/**
+ * Route-handler wrapper: map HttpError to a JSON response, 500 otherwise.
+ * Unhandled errors are logged, never returned — except to a request carrying
+ * `x-debug-errors: <DEBUG_ERRORS_SECRET>` when that env is set (operator
+ * diagnosis on hosts whose runtime logs are hard to reach). Unset = off.
+ */
+export function errorResponse(e: unknown, req?: Request): Response {
   if (e instanceof HttpError) {
     return Response.json({ error: e.message, ...(e.code ? { code: e.code } : {}) }, { status: e.status });
   }
-  console.error('[api] unhandled error:', e instanceof Error ? e.message : e);
-  return Response.json({ error: 'Something went wrong.' }, { status: 500 });
+  const message = e instanceof Error ? e.message : String(e);
+  console.error('[api] unhandled error:', message);
+  const debug = process.env.DEBUG_ERRORS_SECRET;
+  const reveal = Boolean(debug && req && req.headers.get('x-debug-errors') === debug);
+  return Response.json({ error: 'Something went wrong.', ...(reveal ? { detail: message.slice(0, 500) } : {}) }, { status: 500 });
 }

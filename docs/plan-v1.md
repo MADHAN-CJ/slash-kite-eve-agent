@@ -308,7 +308,7 @@ point its `DATABASE_URL` there too, and its migrations run first since we reuse 
 Netlify proxy-rewrites to the droplet are NOT a fix for the stream (same edge timeouts) — the browser must
 reach the droplet directly.
 
-## 12. Production database move: Neon → DigitalOcean (runbook, 2026-11-26 — awaiting the user's go)
+## 12. Production database move: Neon → DigitalOcean — DONE 2026-11-26 09:35 UTC (user's go; runbook below as executed)
 
 **Why:** plan D15 = one database shared by the MCP and this app. The user's DO managed Postgres
 (`slash-prod-do-user-999077-0`, PG 18.7, `defaultdb`, currently EMPTY) is the chosen home. The production
@@ -335,3 +335,94 @@ Neon stays untouched as the rollback (switching the MCP's `DATABASE_URL` back = 
    `0002_oauth_assertions` runs on boot, trusted trio (already in the box `.env`) activates the grant.
 7. Local test through ngrok: `.env` here already has the prod KITE keys + MCP secrets + trio; the user
    registers the ngrok callback on the Kite app; `npm run dev` (Node 24) → login → Login with Kite → chat.
+
+**Executed 2026-11-26 (MCP down 09:33–09:35 UTC):** `pg_dump` (postgres:18-alpine) of Neon schema `prod` → `psql` into DO
+`defaultdb` (schema `prod`, 10 tables, `otps_id_seq` restored at 33); counts identical on every table (users 8,
+broker_connections 4, oauth_clients 27, oauth_tokens 357, otps 5, watchers 4, watcher_fires 2, codes/txns 0,
+schema_migrations 1). Box `.env`: Neon line kept as a comment + `.env.bak-neon-*`; new `DATABASE_URL` = DO with
+`sslmode=require&options=-csearch_path%3Dprod`. `npm run deploy:prod` → commit 4256c43 ("Database changes added")
+live, migration 0002 applied on boot, health OK. **Trusted grant verified LIVE:** token minted for `test@slash.markets`
+from the DO `prod.users` row → `auth_status` on mcp.slash.markets answered that user (kiteUserId FEU218,
+token_expired = normal morning expiry). This app's `eve` schema applied to DO via the new `scripts/db-migrate.ts`
+(programmatic drizzle migrator with `pgConfig`; drizzle-kit's CLI exited 1 silently against DO) — FKs resolve to
+`prod.users` through search_path. **Known cosmetic gap:** prod metadata `grant_types_supported` does not list
+jwt-bearer even though the token endpoint accepts it (settings enabled, SDK 2.3.0 same as local) — see §13.
+
+## 13. Follow-ups after the move (2026-11-26)
+
+- [ ] **Metadata fix pending deploy:** `server.build_asgi` built its ChatGPT-extended metadata with `build_metadata(...)`
+  without `supports_identity_assertion`, so prod advertised only code+refresh grants while the token endpoint already
+  accepted jwt-bearer. Fixed in the zap-kite-mcp working tree (staged, plus ruff formatting of test_server.py; pytest
+  4/4 grant tests, ruff/mypy clean) → user commits+pushes `prod` → `npm run deploy:prod`.
+- [x] **Browser flow verified against production pieces (2026-11-26):** local `npm run dev` (Node 24) on `.env` = DO db
+  (search_path=prod) + prod MCP + prod Kite keys; ngrok tunnel → dev server answers `/api/eve/v1/health` 200 through
+  it. Playwright on localhost: dev login → connect screen "Log in to Zerodha again" (test account FEU218, morning expiry)
+  → Login with Kite → Zerodha's REAL login page "Login to Slash Markets" (api_key accepted; redirect = the ngrok callback
+  the user registered). Remaining = a human Zerodha login (TOTP) in the browser, then chat.
+- [ ] **Vercel `slash-kite-eve` is stale** (old flow, own Neon). To refresh: set `DATABASE_URL` = DO (+search_path=prod),
+  `KITE_MCP_URL` prod, `MCP_*` + `KITE_*` from the local `.env`, drop `CREDS_HASH_PEPPER`, detach the Neon integration,
+  redeploy; Kite redirect must then point at the Vercel/final domain instead of ngrok.
+- [ ] Neon `prod` schema can be dropped once DO has run for a few days (rollback window).
+
+## 14. Fully local stack with a Linux MCP container (2026-11-26)
+
+User has no access to the production Kite app, so the local test must run on their own Kite app and a LOCAL MCP.
+The MCP's script runner executes only on Linux + bubblewrap ≥0.8, so the sibling checkout now runs in a container:
+`docker/mcp.Dockerfile` (ubuntu 24.04, bubblewrap 0.9, uv-managed CPython 3.12 at /opt/uv-python, venv /opt/venv) +
+compose service `mcp` (profile `mcp`, privileged for user namespaces, `../zap-kite-mcp/mcp` bind-mounted read-only at
+/src, `uv sync --frozen` at start, Postgres via the compose network, secrets interpolated from this repo's `.env`:
+KITE_API_KEY/SECRET, MCP_SESSION_SECRET→SESSION_SECRET, MCP_CREDS_ENCRYPTION_KEY→CREDS_ENCRYPTION_KEY, the trusted trio,
+DEV_LOGIN). `npm run dev:mcp` = `docker compose --profile mcp up -d --build mcp`; `scripts/local-mcp.sh` removed.
+Verified: container healthy, `bwrap --unshare-user --disable-userns` OK inside, metadata advertises jwt-bearer, token
+minted from the local `users` row → `auth_status` answers via the container. App side for this stack:
+`DATABASE_URL=<docker> KITE_MCP_URL=http://127.0.0.1:8029 npm run dev` (APP_BASE_URL stays the ngrok URL; Zerodha
+must return to `<ngrok>/api/broker/kite/callback`). **Blocked on the user's Kite app:** Zerodha answers
+`Invalid api_key` (HTTP 400) for the `…7e3q` key in `.env` — the app is inactive/expired or the key is wrong; the
+production key is accepted (302) but belongs to an app the user cannot reconfigure.
+
+## 15. CUTOVER: this app now serves app.slash.markets (2026-11-26 ~10:15 UTC, user's decision)
+
+User has no access to the production Kite app's console, so the test runs on the real redirect instead: this app took
+over **app.slash.markets**. Done: local `.env` back on the production Kite key; Vercel `slash-kite-eve` production env
+= DO `DATABASE_URL` (search_path=prod), `APP_BASE_URL=https://app.slash.markets`, `KITE_MCP_URL` prod, `MCP_*` secrets
++ trusted trio, `KITE_API_KEY/SECRET` (prod app); the Neon integration resource was disconnected (and removed — see
+log); `vercel deploy --prod`; domain `app.slash.markets` moved via API from project `zap-kite` to `slash-kite-eve`
+(`staging-kite-app.slash.markets` stays on zap-kite). Verified on app.slash.markets: `/api/eve/v1/health` ready,
+`/api/broker` 401 JSON, verify-otp bad code → 401 (DB path OK), login page renders. First prod deploy answered 500 on
+DB routes once (cold path) and was fine on the next deploy — a secret-gated `x-debug-errors` detail was added to
+`errorResponse` (env `DEBUG_ERRORS_SECRET`; set on Vercel, remove when done). Consequences: the OLD web app's pages
+(watchers, /terms, /privacy, /support, Trade on Kite) are no longer served at app.slash.markets until P9.5 ports them;
+the Kite redirect `app.slash.markets/api/broker/kite/callback` now lands on this app without any Kite-console change;
+the callback bridge in zap-kite-mcp is no longer needed for prod (left staged, inert when its env is unset).
+Housekeeping: Vercel refuses non-interactive `env rm` for `CREDS_HASH_PEPPER` (unused; remove in the dashboard).
+Next: the user logs in at app.slash.markets with a real email code → Login with Kite → chat.
+
+## 16. P9.5 PARITY BRIEF — port the rest of the old app.slash.markets (for the next session)
+
+**Goal:** everything the old web app (zap-kite-mcp repo root, Next 16, branch `prod`) offered at app.slash.markets
+exists here too, restyled into this app's shell, reusing the SAME v1 functions (no new backend features).
+Source of truth to port FROM (read, then adapt — same shared database, same `public`/`prod` tables):
+- `app/_components/watch-card.tsx` + `app/api/watches/route.ts` (GET list) + `app/api/watches/[id]/route.ts`
+  (PATCH `{action: pause|resume|cancel}`) + `lib/server/watches.ts` (`listWatches`, `mutateWatch`; statuses
+  ARMED/PAUSED/ERROR/EXPIRED/CANCELLED, `statusReason`, recent `watcher_fires`). Watchers are CREATED only by the MCP
+  tool (`create_watcher`) — the web only lists/pauses/resumes/cancels.
+- `app/_components/kite-trade-card.tsx` + `lib/client/kite-publisher.ts` + `types/kite-publisher.d.ts`: "Trade on
+  Kite" via Zerodha's **Kite Publisher** (`https://kite.trade/publisher.js?v=3`, api_key only — our `/api/broker`
+  already returns `publisherApiKey`); deep link `/?trade=1&tradingsymbol=…&exchange=…&transaction_type=…&quantity=…`;
+  watcher symbols are quote keys `NSE:GOLDBEES` → split into exchange + tradingsymbol (`splitSymbol`/`tradeFormFor`).
+  The ONLY order path in the product — Zerodha's own popup; our server never sees orders (safety invariant).
+- `app/terms/page.tsx`, `app/privacy/page.tsx`, `app/support/page.tsx`, `app/_components/legal-page.tsx`,
+  `app/_components/site-footer.tsx`, `lib/legal.ts` (Certus Innovations Pvt Ltd placeholders) — static pages; the
+  marketing site's footer links to app.slash.markets/{terms,privacy}; the plugin/ChatGPT listings link /support.
+- `app/_components/broker-card.tsx` (already superseded by `connect-screen.tsx` + header pill; take only the
+  disconnect button + expiry copy if missing).
+**Where it goes here:** a **Watchers** view in the sidebar (or a tab beside chats) with the watch cards, pause/resume/
+cancel, "Trade on Kite" button per watcher; `/terms`, `/privacy`, `/support` routes + footer on the login page; a
+"Trade on Kite" card reachable from chat (the agent's `create_watcher`/positions answers can deep-link to it).
+**Rules:** no MCP changes; watchers API = same SQL against the shared db (schema via search_path, like
+`lib/server/broker.ts`); drizzle mirrors for `watchers`/`watcher_fires` go in `agent/lib/db/mcp-schema.ts` (never
+migrated by us); Kite Publisher only in the browser; keep the UI in this app's shell (brand tokens already here).
+**Verify:** vitest for `splitSymbol`/`tradeFormFor` + watch status mapping; Playwright on the local stack (docker pg +
+`npm run dev:mcp` container + `npm run dev` with docker DATABASE_URL): seed a watcher row → list → pause → resume →
+cancel → Trade on Kite popup reaches `kite.zerodha.com/connect/login?…type=basket`; `/terms`/`/privacy`/`/support`
+render; then deploy `--prod` and smoke on app.slash.markets.

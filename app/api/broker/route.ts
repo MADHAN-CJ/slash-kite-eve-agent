@@ -9,7 +9,7 @@ export async function GET(req: Request) {
     const user = await requireUser(req);
     return Response.json(await brokerStatus(user.userId));
   } catch (e) {
-    return errorResponse(e);
+    return errorResponse(e, req);
   }
 }
 
@@ -20,6 +20,6 @@ export async function DELETE(req: Request) {
     await disconnect(user.userId);
     return Response.json(await brokerStatus(user.userId));
   } catch (e) {
-    return errorResponse(e);
+    return errorResponse(e, req);
   }
 }
