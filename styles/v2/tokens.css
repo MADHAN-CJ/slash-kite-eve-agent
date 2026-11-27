@@ -1,0 +1,15 @@
+/* v2 tokens: fonts and the brand values every v2 page shares. Ported verbatim from
+   markets-hero ux/shared/tokens.css (only the font URLs differ). Dark only (plan-v2 D3).
+   Only values that are the same everywhere live here; each shell (chat, home) adds its
+   own on top, exactly as in the prototype. */
+@font-face{font-family:TS;src:url(/v2/fonts/TimelessSans-SansLight.otf);font-weight:300;font-display:swap}
+@font-face{font-family:TS;src:url(/v2/fonts/TimelessSans-SansRegular.otf);font-weight:400;font-display:swap}
+@font-face{font-family:TS;src:url(/v2/fonts/TimelessSans-SansMedium.otf);font-weight:500;font-display:swap}
+@font-face{font-family:TS;src:url(/v2/fonts/TimelessSans-SansSemibold.otf);font-weight:600;font-display:swap}
+@font-face{font-family:SS4;src:url(/v2/fonts/SourceSerif4-latin.woff2) format('woff2');font-weight:200 900;font-display:swap}
+:root{
+  --bg:#0F1114;--ink:#F5F7FA;--body:#A9B1BD;
+  --line:rgba(255,255,255,.10);--line2:rgba(255,255,255,.18);
+  --slash:#3D6BFF;--sky:#8CB8FF;--mint:#7EE2A8;--peach:#F2C38B;--lav:#C7A6FF;
+  --serif:'SS4',Georgia,serif;--mono:ui-monospace,SFMono-Regular,Menlo,monospace;--ease:cubic-bezier(.2,.8,.2,1);
+}

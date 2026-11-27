@@ -1,0 +1,21 @@
+{
+  "ask:empty": "wired",
+  "ask:draft": "wired",
+  "ask:run": "wired",
+  "ask:answer": "wired",
+  "ask:stopped": "wired",
+  "ask:timeout": "wired",
+  "ask:kite-expired": "wired",
+  "ask:no-market-data": "wired",
+  "connect-kite:connect": "wired",
+  "connect-kite:faq": "wired",
+  "connect-kite:wait": "wired",
+  "connect-kite:fail": "wired",
+  "connect-kite:blocked": "wired",
+  "connect-kite:timeout": "wired",
+  "connect-kite:done": "wired",
+  "morning:ended": "wired",
+  "morning:kite": "wired",
+  "morning:failed": "wired",
+  "morning:back": "wired"
+}

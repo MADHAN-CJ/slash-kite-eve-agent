@@ -1,0 +1,732 @@
+{
+  "sourceCommit": "f8652c0",
+  "flows": [
+    {
+      "id": "homepage",
+      "title": "Homepage",
+      "summary": "The /markets homepage: depth book hero, sample answers, the Split sections, and the nav per state (signed out, waitlist, signed in). Sign up opens the sheet.",
+      "shell": "home",
+      "default": "open",
+      "group": "Before the app",
+      "states": [
+        {
+          "id": "open",
+          "label": "Signed out",
+          "note": "The final homepage. Sign up and Sign in open the sheet.",
+          "screenshot": true
+        },
+        {
+          "id": "wait",
+          "label": "Waitlist",
+          "note": "Sign up becomes Join waitlist.",
+          "screenshot": true
+        },
+        {
+          "id": "in",
+          "label": "Signed in",
+          "note": "Nav shows Open chat; a Continue strip.",
+          "screenshot": true
+        }
+      ],
+      "exits": [
+        {
+          "on": "Start the tour → after a new sign-up",
+          "to": "tour",
+          "state": "new"
+        },
+        {
+          "on": "Start the tour → after a new sign-up with a homepage question",
+          "to": "tour",
+          "state": "q"
+        },
+        {
+          "on": "Open chat → after a returning sign-in, or when signed in",
+          "to": "ask",
+          "state": "empty"
+        },
+        {
+          "on": "Watching card when signed in",
+          "to": "watchers",
+          "state": "active"
+        }
+      ],
+      "events": [
+        {
+          "name": "sheet-open",
+          "when": "The sign-up sheet opened"
+        },
+        {
+          "name": "signed-in",
+          "when": "The code was right; the sheet shows the next step"
+        }
+      ]
+    },
+    {
+      "id": "signup",
+      "title": "Sign up",
+      "summary": "The email and six-digit code sheet, including send, recovery and returning-account states. The demo code changes after resend.",
+      "shell": "home",
+      "default": "email",
+      "group": "Before the app",
+      "states": [
+        {
+          "id": "email",
+          "label": "Email",
+          "note": "Make an account, email field.",
+          "screenshot": true
+        },
+        {
+          "id": "invalid-email",
+          "label": "Invalid email",
+          "note": "Shows how to correct the address before requesting a code.",
+          "screenshot": true
+        },
+        {
+          "id": "sending",
+          "label": "Sending code",
+          "note": "The button shows progress and prevents a second request.",
+          "screenshot": true
+        },
+        {
+          "id": "send-failed",
+          "label": "Send failed",
+          "note": "Try again with the address already in the field.",
+          "screenshot": true
+        },
+        {
+          "id": "code",
+          "label": "Code sent",
+          "note": "Six boxes, a still of the email. 417302 works.",
+          "screenshot": true
+        },
+        {
+          "id": "wrong",
+          "label": "Wrong code",
+          "note": "Red line, boxes clear.",
+          "screenshot": true
+        },
+        {
+          "id": "expired",
+          "label": "Code expired",
+          "note": "The old code is disabled. Send a new code to continue.",
+          "screenshot": true
+        },
+        {
+          "id": "resent",
+          "label": "Code resent",
+          "note": "Confirms the new code and restarts the cooldown.",
+          "screenshot": true
+        },
+        {
+          "id": "resume",
+          "label": "Resume signup",
+          "note": "After a refresh, continue with the code already sent.",
+          "screenshot": true
+        },
+        {
+          "id": "returning",
+          "label": "Returning",
+          "note": "Welcome back. Skips the tour.",
+          "screenshot": true
+        },
+        {
+          "id": "existing-account",
+          "label": "Existing account verified",
+          "note": "An existing account entered through Sign up. Open chat skips the tour.",
+          "screenshot": true
+        },
+        {
+          "id": "returning-question",
+          "label": "Returning with a question",
+          "note": "The question stays with the user after sign-in and opens as a draft in chat.",
+          "screenshot": false
+        }
+      ],
+      "exits": [
+        {
+          "on": "Start the tour → (new account)",
+          "to": "tour",
+          "state": "new"
+        },
+        {
+          "on": "Open chat → (returning)",
+          "to": "ask",
+          "state": "empty"
+        },
+        {
+          "on": "Open chat with a waiting question",
+          "to": "ask",
+          "state": "draft"
+        }
+      ],
+      "events": [
+        {
+          "name": "sheet-open",
+          "when": "The sheet opened"
+        },
+        {
+          "name": "signed-in",
+          "when": "The code was right"
+        }
+      ]
+    },
+    {
+      "id": "tour",
+      "title": "The tour",
+      "summary": "A new account's full-screen intro: three screens with live demos and a \"What do you trade?\" pick, ending on Connect Kite.",
+      "shell": "chat",
+      "default": "new",
+      "group": "First run",
+      "states": [
+        {
+          "id": "new",
+          "label": "New account",
+          "note": "Full-screen intro, screen 1 of 3.",
+          "screenshot": true
+        },
+        {
+          "id": "q",
+          "label": "With a question",
+          "note": "The homepage question stays visible on all three screens.",
+          "screenshot": true
+        },
+        {
+          "id": "after",
+          "label": "In the app",
+          "note": "The chat behind the Kite gate, after Not now.",
+          "screenshot": true
+        },
+        {
+          "id": "queued",
+          "label": "Kite skipped, question saved",
+          "note": "Chat shows the saved question. Connect Kite later to run it.",
+          "screenshot": true
+        }
+      ],
+      "exits": [
+        {
+          "on": "Connect Kite on the last screen, the gate banner or the sidebar link",
+          "to": "connect-kite",
+          "state": "connect"
+        }
+      ],
+      "events": []
+    },
+    {
+      "id": "connect-kite",
+      "title": "Connect Kite",
+      "summary": "The Connect Kite dialog over the gated chat, with a login preview, safety FAQ, waiting, failed and connected. Success opens chat with a waiting question if there is one.",
+      "shell": "chat",
+      "default": "connect",
+      "group": "First run",
+      "states": [
+        {
+          "id": "connect",
+          "label": "Connect",
+          "note": "Summary left; a three-step preview of Kite's login right.",
+          "screenshot": true
+        },
+        {
+          "id": "faq",
+          "label": "Is it safe?",
+          "note": "The FAQ.",
+          "screenshot": true
+        },
+        {
+          "id": "wait",
+          "label": "Waiting",
+          "note": "Kite's window is open.",
+          "screenshot": true
+        },
+        {
+          "id": "fail",
+          "label": "Didn't connect",
+          "note": "The window closed before login finished.",
+          "screenshot": true
+        },
+        {
+          "id": "blocked",
+          "label": "Kite window blocked",
+          "note": "Allow pop-ups, then retry. The question still waits.",
+          "screenshot": false
+        },
+        {
+          "id": "timeout",
+          "label": "Kite login timed out",
+          "note": "Start a fresh Kite login after the countdown. The question still waits.",
+          "screenshot": false
+        },
+        {
+          "id": "done",
+          "label": "Connected",
+          "note": "Ring fills, then chat opens. A waiting question runs only if the user entered or chose one.",
+          "screenshot": true
+        }
+      ],
+      "exits": [
+        {
+          "on": "Kite connects with a question saved during onboarding or chosen in the gated chat",
+          "to": "ask",
+          "state": "answer"
+        },
+        {
+          "on": "Kite connects without a question",
+          "to": "ask",
+          "state": "empty"
+        },
+        {
+          "on": "Open Watchers on a started watcher",
+          "to": "watchers",
+          "state": "new"
+        },
+        {
+          "on": "Trade on Kite under the answer",
+          "to": "trade",
+          "state": "answer"
+        },
+        {
+          "on": "Tap your account row (bottom left)",
+          "to": "account",
+          "state": "on"
+        }
+      ],
+      "events": [
+        {
+          "name": "connected",
+          "when": "Kite connected and the gate lifted"
+        },
+        {
+          "name": "answered",
+          "when": "The waiting question finished"
+        }
+      ]
+    },
+    {
+      "id": "ask",
+      "title": "First question",
+      "summary": "A question runs: status line, a plan that ticks off, Answer · Chart · Code, sources, receipt, next actions. Watch this prefills a watcher prompt and a confirm card. Interrupted answers, missing data, credits and chat-length limits.",
+      "shell": "chat",
+      "default": "empty",
+      "group": "In the app",
+      "states": [
+        {
+          "id": "empty",
+          "label": "Empty",
+          "note": "A new chat.",
+          "screenshot": true
+        },
+        {
+          "id": "draft",
+          "label": "Question kept after sign-in",
+          "note": "The original question is in the chat box, ready to edit or send.",
+          "screenshot": false
+        },
+        {
+          "id": "run",
+          "label": "Running",
+          "note": "Held inside the plan.",
+          "screenshot": true
+        },
+        {
+          "id": "answer",
+          "label": "Answer",
+          "note": "Later version: if a stock or contract is ambiguous, ask the user which one they meant before running the answer.",
+          "screenshot": true
+        },
+        {
+          "id": "stopped",
+          "label": "Stopped",
+          "note": "Stopped part-way. Nothing more ran.",
+          "screenshot": true
+        },
+        {
+          "id": "timeout",
+          "label": "Answer timed out",
+          "note": "Try the same question again in this chat.",
+          "screenshot": false
+        },
+        {
+          "id": "kite-expired",
+          "label": "Kite expired mid-answer",
+          "note": "The partial answer stays in chat. Reconnect Kite to retry the same question.",
+          "screenshot": true
+        },
+        {
+          "id": "no-market-data",
+          "label": "No market data found",
+          "note": "No candles for the requested date. Edit the original question.",
+          "screenshot": true
+        },
+        {
+          "id": "low",
+          "label": "Credits low",
+          "note": "20% left.",
+          "screenshot": true
+        },
+        {
+          "id": "out",
+          "label": "Credits out",
+          "note": "The limit card.",
+          "screenshot": true
+        },
+        {
+          "id": "long",
+          "label": "Long chat",
+          "note": "A nudge to start a new chat.",
+          "screenshot": true
+        },
+        {
+          "id": "full",
+          "label": "Chat full",
+          "note": "A new chat with a carried summary.",
+          "screenshot": true
+        }
+      ],
+      "exits": [
+        {
+          "on": "Open Watchers on the confirm card after Start watching",
+          "to": "watchers",
+          "state": "new"
+        },
+        {
+          "on": "Trade on Kite under an answer",
+          "to": "trade",
+          "state": "answer"
+        },
+        {
+          "on": "Trade on Kite on a watcher card",
+          "to": "trade",
+          "state": "watcher"
+        },
+        {
+          "on": "Tap your account row (bottom left)",
+          "to": "account",
+          "state": "on"
+        },
+        {
+          "on": "Tap your account during the expired Kite preview",
+          "to": "account",
+          "state": "expired"
+        }
+      ],
+      "events": [
+        {
+          "name": "answered",
+          "when": "An answer finished, with Watch this under it"
+        },
+        {
+          "name": "watch-prefilled",
+          "when": "Watch this filled the box with a watcher prompt"
+        },
+        {
+          "name": "watcher-card",
+          "when": "The confirm card for a watcher is showing"
+        },
+        {
+          "name": "watching",
+          "when": "Start watching was tapped"
+        }
+      ]
+    },
+    {
+      "id": "watchers",
+      "title": "Watchers",
+      "summary": "The Watchers screen (E · Simple): no watchers, just started, alerted, finished, Kite ended, plus the alert email and the 8 AM reminder email.",
+      "shell": "chat",
+      "default": "empty",
+      "group": "In the app",
+      "states": [
+        {
+          "id": "empty",
+          "label": "No watchers",
+          "note": "Empty screen with three example prompts.",
+          "screenshot": true
+        },
+        {
+          "id": "new",
+          "label": "Just started",
+          "note": "The watcher from the first question, just started.",
+          "screenshot": true
+        },
+        {
+          "id": "active",
+          "label": "Alerted",
+          "note": "GOLDBEES is true now; the log shows what was sent.",
+          "screenshot": true
+        },
+        {
+          "id": "finished",
+          "label": "Finished",
+          "note": "Expired and cancelled.",
+          "screenshot": true
+        },
+        {
+          "id": "kite",
+          "label": "Kite ended",
+          "note": "Later version: when Kite reconnects, only resume watchers paused by Kite expiry. Keep manually paused watchers paused.",
+          "screenshot": true
+        },
+        {
+          "id": "email",
+          "label": "Alert email",
+          "note": "The email when GOLDBEES dropped below 100.",
+          "screenshot": true
+        },
+        {
+          "id": "remind",
+          "label": "Reminder email",
+          "note": "The 8 AM email when watchers are paused.",
+          "screenshot": true
+        }
+      ],
+      "exits": [
+        {
+          "on": "Trade on Kite in the alert email",
+          "to": "trade",
+          "state": "email"
+        },
+        {
+          "on": "Trade on Kite on a watcher",
+          "to": "trade",
+          "state": "watcher"
+        },
+        {
+          "on": "Reconnect Kite in the reminder email",
+          "to": "morning",
+          "state": "ended"
+        },
+        {
+          "on": "Tap your account row (bottom left)",
+          "to": "account",
+          "state": "on"
+        },
+        {
+          "on": "Trade on Kite from the Reliance watcher",
+          "to": "trade",
+          "state": "reliance-watcher"
+        }
+      ],
+      "events": []
+    },
+    {
+      "id": "trade",
+      "title": "Trade on Kite",
+      "summary": "The pre-filled Trade on Kite pop-up from a watcher, an answer, an email or futures; Kite's window as a plain stand-in; after; blocked. /markets never places the order.",
+      "shell": "chat",
+      "default": "watcher",
+      "group": "In the app",
+      "states": [
+        {
+          "id": "watcher",
+          "label": "From a watcher",
+          "note": "Pre-filled Buy, GOLDBEES.",
+          "screenshot": true
+        },
+        {
+          "id": "reliance-watcher",
+          "label": "From a Reliance watcher",
+          "note": "The order form keeps RELIANCE and shows the original watcher rule.",
+          "screenshot": false
+        },
+        {
+          "id": "invalid-order",
+          "label": "Invalid quantity or price",
+          "note": "The form explains the errors and waits for valid values.",
+          "screenshot": false
+        },
+        {
+          "id": "answer",
+          "label": "From an answer",
+          "note": "RELIANCE, pick Buy or Sell.",
+          "screenshot": true
+        },
+        {
+          "id": "email",
+          "label": "From an email",
+          "note": "Pre-filled from the alert email.",
+          "screenshot": true
+        },
+        {
+          "id": "fno",
+          "label": "Futures",
+          "note": "NIFTY futures, lots.",
+          "screenshot": true
+        },
+        {
+          "id": "window",
+          "label": "Kite's window",
+          "note": "The stand-in for Kite's own window.",
+          "screenshot": true
+        },
+        {
+          "id": "closed",
+          "label": "After",
+          "note": "Kite's window closed.",
+          "screenshot": true
+        },
+        {
+          "id": "blocked",
+          "label": "Blocked",
+          "note": "The browser blocked the window.",
+          "screenshot": true
+        }
+      ],
+      "exits": [
+        {
+          "on": "Tap your account row (bottom left)",
+          "to": "account",
+          "state": "on"
+        }
+      ],
+      "events": [
+        {
+          "name": "form",
+          "when": "The pop-up shows the order form"
+        },
+        {
+          "name": "kite-window",
+          "when": "Kite's window is open"
+        },
+        {
+          "name": "kite-closed",
+          "when": "Kite's window closed"
+        },
+        {
+          "name": "blocked",
+          "when": "The window was blocked"
+        },
+        {
+          "name": "dismissed",
+          "when": "The pop-up was closed"
+        }
+      ]
+    },
+    {
+      "id": "account",
+      "title": "Your account",
+      "summary": "The account pop-up from the avatar: email, a Kite reconnect hero (Kite ends at 6 AM daily), token use as one bar split into chats and watchers, Use in Claude or ChatGPT, Sign out.",
+      "shell": "chat",
+      "default": "morning",
+      "group": "In the app",
+      "states": [
+        {
+          "id": "morning",
+          "label": "After 6 AM",
+          "note": "Account shows Kite ended at 6 AM when opened from the next-morning chat.",
+          "screenshot": true
+        },
+        {
+          "id": "expired",
+          "label": "Kite session expired in chat",
+          "note": "Account shows the same expired status as chat and offers Reconnect Kite.",
+          "screenshot": false
+        },
+        {
+          "id": "wait",
+          "label": "Reconnecting",
+          "note": "Waiting on Kite.",
+          "screenshot": true
+        },
+        {
+          "id": "reconnect-failed",
+          "label": "Reconnect failed",
+          "note": "Kite is still disconnected. Try again starts a fresh login.",
+          "screenshot": false
+        },
+        {
+          "id": "on",
+          "label": "Connected",
+          "note": "Countdown to 6 AM.",
+          "screenshot": true
+        },
+        {
+          "id": "out",
+          "label": "Disconnected",
+          "note": "Disconnected by you.",
+          "screenshot": true
+        },
+        {
+          "id": "low",
+          "label": "Credits low",
+          "note": "The usage bar near the end.",
+          "screenshot": true
+        }
+      ],
+      "exits": [
+        {
+          "on": "Sign out",
+          "to": "homepage",
+          "state": "open"
+        }
+      ],
+      "events": []
+    },
+    {
+      "id": "morning",
+      "title": "Next morning",
+      "summary": "The chat at 06:12 after Kite ended: sky banner, greyed input, dashed avatar ring, paused watchers; Kite's login as a stand-in; a login that didn't finish; back in the same chat.",
+      "shell": "chat",
+      "default": "ended",
+      "group": "In the app",
+      "states": [
+        {
+          "id": "ended",
+          "label": "06:12, Kite ended",
+          "note": "Sky banner, greyed input, dashed avatar ring, paused watchers.",
+          "screenshot": true
+        },
+        {
+          "id": "kite",
+          "label": "Kite's page",
+          "note": "The stand-in login window.",
+          "screenshot": true
+        },
+        {
+          "id": "failed",
+          "label": "Didn't finish",
+          "note": "The login closed early. Nothing changed.",
+          "screenshot": true
+        },
+        {
+          "id": "back",
+          "label": "Back in chat",
+          "note": "Connected line and countdown; watchers running again.",
+          "screenshot": true
+        }
+      ],
+      "exits": [
+        {
+          "on": "Open Watchers on the connected line",
+          "to": "watchers",
+          "state": "active"
+        },
+        {
+          "on": "Tap your account row (bottom left)",
+          "to": "account",
+          "state": "on"
+        },
+        {
+          "on": "Tap your account before reconnecting",
+          "to": "account",
+          "state": "morning"
+        },
+        {
+          "on": "Tap your account while reconnecting",
+          "to": "account",
+          "state": "wait"
+        },
+        {
+          "on": "Tap your account after a failed reconnect",
+          "to": "account",
+          "state": "reconnect-failed"
+        }
+      ],
+      "events": [
+        {
+          "name": "reconnected",
+          "when": "Kite connected again"
+        }
+      ]
+    }
+  ]
+}

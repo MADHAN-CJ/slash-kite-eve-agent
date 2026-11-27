@@ -1,8 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import "./globals.css";
-import "./markets.css";
+import "../globals.css";
+import "../markets.css";
 
 export const metadata: Metadata = {
   title: "/markets · Your AI, connected to the market",

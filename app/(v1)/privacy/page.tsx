@@ -1,6 +1,6 @@
 import { MarketsLabel } from "@/components/brand";
 import { legal } from "@/lib/legal";
-import { LegalPage, type LegalSection, legalMetadata } from "../_components/legal-page";
+import { LegalPage, type LegalSection, legalMetadata } from "@/app/_components/legal-page";
 
 export const metadata = legalMetadata(
   "Privacy Policy",

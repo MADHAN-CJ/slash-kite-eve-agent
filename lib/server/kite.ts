@@ -29,9 +29,14 @@ export function kiteApiKey(): string | null {
   return process.env.KITE_API_KEY ?? null;
 }
 
-export async function loginUrl(userId: string): Promise<string> {
+/** Where the callback sends the browser afterwards: a relative path on this app, else the home page. */
+export function safeReturnPath(p: unknown): string | undefined {
+  return typeof p === 'string' && /^\/[A-Za-z0-9_\-./?=&%]*$/.test(p) && !p.startsWith('//') ? p : undefined;
+}
+
+export async function loginUrl(userId: string, returnTo?: string): Promise<string> {
   const { apiKey, loginUrl } = config();
-  const state = await new SignJWT({ purpose: 'kite-login' })
+  const state = await new SignJWT({ purpose: 'kite-login', ...(returnTo ? { rt: returnTo } : {}) })
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(userId)
     .setIssuedAt()
@@ -45,12 +50,12 @@ export async function loginUrl(userId: string): Promise<string> {
   return `${loginUrl}?${params.toString()}`;
 }
 
-export async function userFromState(state: string | null): Promise<string> {
+export async function userFromState(state: string | null): Promise<{ userId: string; returnTo?: string }> {
   if (!state) throw new HttpError(400, 'This login link has expired. Start the Zerodha login again.');
   try {
     const { payload } = await jwtVerify(state, sessionSigningKey());
     if (payload.purpose !== 'kite-login' || !payload.sub) throw new Error('bad state');
-    return payload.sub;
+    return { userId: payload.sub, returnTo: safeReturnPath(payload.rt) };
   } catch {
     throw new HttpError(400, 'This login link has expired. Start the Zerodha login again.');
   }

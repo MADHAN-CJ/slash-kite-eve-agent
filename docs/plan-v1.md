@@ -248,7 +248,7 @@ Env: DATABASE_URL (MCP db), KITE_API_KEY/SECRET, RESEND_API_KEY, EMAIL_FROM, DEV
   unit 14/14 · `db:smoke` OK · `e2e:mint-race` PASS (6 processes → 1 mint) · `ui-smoke.py` 21/21 · `e2e:agent` 10/10
   (the model now tells the user to click Login with Kite in-app and still web-searches a news question while Zerodha
   is disconnected; assertion "text cites a URL" relaxed — sources are citation cards, not prose). `npm run build` clean.
-- [ ] P9.5 (PARKED — user: login + chat first) Watchers + Trade on Kite + legal/support pages port.
+- [x] P9.5 Watchers + Trade on Kite + legal/support pages port — BUILT + verified locally 2026-11-26 (§17); production deploy pending the user's go.
 - [ ] P9.6 Staging deploy (needs the user's inputs, in this order):
   1. **DigitalOcean Postgres URL** (user) → the staging MCP's `DATABASE_URL` points at it FIRST (its migrator creates
      `public`, incl. `0002_oauth_assertions`), then `DATABASE_URL_UNPOOLED=<DO url> npm run db:migrate` for `eve`.
@@ -426,3 +426,44 @@ migrated by us); Kite Publisher only in the browser; keep the UI in this app's s
 `npm run dev:mcp` container + `npm run dev` with docker DATABASE_URL): seed a watcher row → list → pause → resume →
 cancel → Trade on Kite popup reaches `kite.zerodha.com/connect/login?…type=basket`; `/terms`/`/privacy`/`/support`
 render; then deploy `--prod` and smoke on app.slash.markets.
+
+## 17. P9.5 parity — AS BUILT (2026-11-26; local verification done, NOT deployed)
+
+**Watchers.** `agent/lib/db/mcp-schema.ts` mirrors the MCP's `watchers` + `watcher_fires` (never migrated by us).
+`lib/server/watches.ts`: `listWatches` (newest first + the 3 latest alerts each, one windowed query), `mutateWatch`
+(pure `transition(action, status)` → pause ARMED · resume PAUSED/ERROR · cancel ARMED/PAUSED/ERROR, else 409; the
+UPDATE is guarded on the status just read and on `user_id`, 404 for someone else's id) and pure `summarize` (the
+`script` and `user_id` never leave the server). Routes `GET /api/watches`, `PATCH /api/watches/:id {action}`.
+UI: sidebar item **Watchers** → `watchers-view.tsx` (15 s refresh, live then Finished) + `watch-card.tsx`
+(status pill, broker-pause reason, alerts, Pause/Resume/Cancel with confirm, Trade on Kite).
+**Trade on Kite.** `lib/client/kite-publisher.ts` + `types/kite-publisher.d.ts` copied verbatim; `kite-trade-card.tsx`
+restyled to this shell; sidebar item **Trade on Kite** → its own pane; a watcher's button pre-fills it; the deep link
+`/?trade=1&tradingsymbol=…` (what the MCP skill tells the analyst to hand out, `appUrl` = this app) opens the pane
+pre-filled and is then removed from the address bar. Kite Publisher runs only in the browser with `publisherApiKey`
+from `/api/broker`; our server never sees an order. Neither pane is behind the Zerodha connect gate (chat panes only).
+**Legal.** `/terms`, `/privacy`, `/support`, `legal-page.tsx`, `site-footer.tsx`, `lib/legal.ts` copied verbatim
+(static, prerendered); footer links on the login page and at the bottom of the sidebar; `.glass`/`.legal` CSS and the
+`surface/select/positive/negative/warning` colour utilities added to `globals.css`.
+**Agent.** `skill-src/preface.md`: watchers are managed in the Watchers pane; the trade link opens the Trade pane.
+**Not ported:** `broker-card.tsx` (superseded by connect screen + pill; no in-UI "disconnect Zerodha" button exists
+here — `DELETE /api/broker` is API-only, as before this phase).
+
+**Verified (docker pg + `npm run dev:mcp` + `npm run dev` with docker `DATABASE_URL`, fake Kite for login):**
+- `tsc --noEmit` clean · `npm run build` clean (routes `/api/watches`, `/api/watches/[id]`, static `/terms` `/privacy` `/support`).
+- vitest unit **27/27** (new: `kite-publisher` 8 incl. `splitSymbol`/`tradeFormFor`; `watches` 5 = summary mapping,
+  full action×status transition matrix, status labels).
+- Playwright `scripts/ui-smoke.py` **37/37** (was 21): seeded watcher → listed with alert → API omits `script` →
+  pause → resume → 400/404/401 → Trade on Kite pane pre-filled → Kite's button opens `https://kite.zerodha.com/connect/basket`
+  (real publisher.js) → cancel → Finished → resume of a cancelled watcher 409 → `/?trade=1` deep link → sidebar legal
+  links → `/terms` `/privacy` `/support` render → login-page footer. The script seeds/cleans its watcher via
+  `docker exec … psql` (`SMOKE_PG_CONTAINER`), since only the MCP creates watchers.
+
+**Left for the user:**
+- [x] **Deployed to production 2026-11-26** (commit af1e3b8, `scripts/deploy.sh --prod --yes`, READY; three attempts failed on a
+  local TLS upload error first). Public smoke on app.slash.markets: `/` `/terms` `/privacy` `/support` 200 with their
+  headings, login page carries the footer links, eve health 200, `/api/watches` + `PATCH /api/watches/:id` 401 without a
+  session. Still for a logged-in human: watchers of a real account + the Trade popup with the production api_key.
+- [ ] Legal text is the OLD app's, verbatim: it describes a connector for Claude/ChatGPT and lists Neon as the database
+  host. This app adds an in-app analyst (our server sends chat + tool output to Anthropic, searches via Tavily) and
+  the database is now DigitalOcean — Terms §1/§5 and the Privacy sub-processor list need a legal-owner edit.
+  Operator details in `lib/legal.ts` render highlighted (`.placeholder` style), exactly as on the old site.

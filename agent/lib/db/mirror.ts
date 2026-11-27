@@ -330,6 +330,12 @@ export async function onTurnEnded(sessionId: string, turnId: string): Promise<vo
   if (buf.texts.length === 0 && buf.parts.length === 0 && buf.steps === 0) return;
   await flushAssistant(buf);
   await db().update(threads).set({ updatedAt: sql`now()` }).where(eq(threads.id, buf.threadId));
+  // Credits audit line (plan-v2 D6): what this turn cost, cached tokens included. Never message content.
+  const usage: Usage = { ...buf.usage, totalTokens: buf.usage.inputTokens + buf.usage.outputTokens };
+  const cost = costForUsage(usage);
+  console.info(
+    `[credits] ${JSON.stringify({ at: new Date().toISOString(), sessionId, turnId, threadId: buf.threadId, steps: buf.steps, ...buf.usage, costUsd: cost?.total ?? null, model: cost?.model ?? null })}`,
+  );
 }
 
 export async function onSessionWaiting(

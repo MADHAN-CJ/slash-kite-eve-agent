@@ -27,7 +27,9 @@
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
     "test:indicators": "vitest run tests/indicators",
-    "dev:mcp:logs": "docker compose logs -f mcp"
+    "dev:mcp:logs": "docker compose logs -f mcp",
+    "v2:sync": "tsx scripts/v2-sync-flows.ts",
+    "v2:compare": "/usr/bin/python3 scripts/v2-compare.py"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.10",
@@ -44,11 +46,13 @@
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "cmdk": "1.1.1",
+    "dompurify": "^3.4.11",
     "drizzle-orm": "^0.45.2",
     "eve": "^0.22.1",
     "jose": "^6.0.10",
     "lightweight-charts": "^5.2.1",
     "lucide-react": "1.16.0",
+    "marked": "^16.4.2",
     "motion": "12.40.0",
     "nanoid": "5.1.11",
     "next": "16.2.6",
