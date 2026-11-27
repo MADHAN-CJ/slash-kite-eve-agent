@@ -155,7 +155,9 @@ export const notificationJobs = eve.table('notification_jobs', {
   state: text('state').notNull().default('pending'), attempts: integer('attempts').notNull().default(0),
   sentAt: timestamp('sent_at', { withTimezone: true }), lastError: text('last_error'),
   subject: text('subject'), html: text('html'), plainText: text('plain_text'), chartPng: text('chart_png'),
-  providerId: text('provider_id'), createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  providerId: text('provider_id'), providerPayload: jsonb('provider_payload'),
+  firstAttemptAt: timestamp('first_attempt_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index('notification_due_idx').on(t.state, t.dueAt), index('notification_user_sent_idx').on(t.userId, t.sentAt)]);
 export const watcherObservations = eve.table('watcher_observations', {
   id: bigserial('id', { mode: 'number' }).primaryKey(), watcherId: text('watcher_id').notNull(),

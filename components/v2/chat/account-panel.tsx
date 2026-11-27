@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { EmailPreferences } from './email-preferences';
 
 /** Account views take explicit data. The lab may supply the prototype's
  * invented usage split/calendar text; production must supply real values. */
@@ -42,6 +43,7 @@ export interface AccountPanelProps {
   signingOut?: boolean;
   /** Fixture screenshots follow the prototype's initial focus; live panels move focus inside. */
   autoFocus?: boolean;
+  emailPreferences?: boolean;
 }
 
 const paths = {
@@ -87,6 +89,7 @@ export function AccountPanel({
   onSignOut,
   signingOut,
   autoFocus = true,
+  emailPreferences = false,
 }: AccountPanelProps) {
   const [view, setView] = useState<'main' | 'mcp'>('main');
   const [tab, setTab] = useState<'claude' | 'gpt'>('claude');
@@ -341,6 +344,7 @@ export function AccountPanel({
                 Chat credits unavailable.
               </div>
             )}
+            {emailPreferences && <EmailPreferences />}
             <button type="button" className="rw8" data-k="mcp" onClick={() => setView('mcp')}>
               <Icon name="plug" />
               <span>Use in Claude or ChatGPT</span>

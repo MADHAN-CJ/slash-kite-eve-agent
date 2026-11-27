@@ -84,6 +84,14 @@ export function storedAnswer(content: string, parts: MessagePart[], createdAt: s
       if (p.type === 'tool_result') {
         a.output = p.output;
         a.state = 'ok';
+      } else if (p.type === 'input_request') {
+        // Parked for approval and never answered: the confirm card comes back on reload.
+        if (a.state === 'running') {
+          const approveId = p.options.find((o) => /approve|allow|yes/i.test(`${o.id} ${o.label ?? ''}`))?.id ?? 'approve';
+          const rejectId = p.options.find((o) => /reject|deny|no\b/i.test(`${o.id} ${o.label ?? ''}`))?.id ?? 'reject';
+          a.state = 'awaiting';
+          a.approval = { requestId: p.requestId, approveId, rejectId };
+        }
       } else {
         a.error = p.error;
         a.state = p.error === 'Declined by user' ? 'denied' : 'error';
@@ -91,7 +99,7 @@ export function storedAnswer(content: string, parts: MessagePart[], createdAt: s
     }
   }
   const tools = order.map((id) => byCall.get(id) as ToolActivity);
-  // A call that never got a result in a finished turn was cut off.
+  // A call that never got a result in a finished turn was cut off (a parked approval is not).
   for (const t of tools) if (t.state === 'running') t.state = 'error';
   return buildAnswer({ text: content, tools, streaming: false, at: timeOf(createdAt) });
 }

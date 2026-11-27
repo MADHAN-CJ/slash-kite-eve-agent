@@ -10,13 +10,12 @@ import { creditsAllowanceUsd, monthWindowIst } from './credits';
  *
  *  - CREDITS_LOW_PCT      credits left (%) at or under which the bar turns sky
  *                         and reads "N% left this month." (prototype: 20).
- *  - CHAT_LONG_TOKENS     prompt size of the last turn (input + cache read +
- *                         cache write tokens) from which a chat is "long"
- *                         (soft note). Default 80 000.
+ *  - CHAT_LONG_TOKENS     estimated context (transcript characters / 4) from
+ *                         which a chat is "long" (soft note). Default 80 000.
  *  - CHAT_FULL_TOKENS     … from which it is "full" (card replaces the box,
  *                         the proxy refuses further turns). Default 150 000.
- *  - CHAT_LONG_TURNS /    the same by user turns, for threads whose usage was
- *    CHAT_FULL_TURNS      not recorded. Defaults 20 / 40.
+ *  - CHAT_LONG_TURNS /    the same by user turns (whichever trips first).
+ *    CHAT_FULL_TURNS      Defaults 20 / 40.
  *
  * "Out" needs no threshold: the month's spend has reached the allowance.
  */
@@ -60,29 +59,28 @@ export interface LimitMessage {
   role: string;
   content: string;
   usage: Usage | null;
+  parts?: unknown;
 }
 
-/** Prompt size of the last assistant turn: everything the model read to answer. */
-function lastPromptTokens(messages: readonly LimitMessage[]): number | null {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i];
-    if (m.role !== 'assistant' || !m.usage) continue;
-    const { inputTokens = 0, cacheReadTokens = 0, cacheWriteTokens = 0 } = m.usage;
-    const n = inputTokens + cacheReadTokens + cacheWriteTokens;
-    return n > 0 ? n : null;
-  }
-  return null;
+/**
+ * The context the next turn would carry, estimated from the stored transcript
+ * (≈ 4 characters per token over message text and tool activity). The per-turn
+ * `usage` rows cannot be used: eve sums every model call of a tool loop into
+ * them, so one busy turn reads as 150k "input" tokens (seen live, 2026-11-27).
+ */
+function contextTokens(messages: readonly LimitMessage[]): number {
+  let chars = 0;
+  for (const m of messages) chars += m.content.length + (m.parts ? JSON.stringify(m.parts).length : 0);
+  return Math.round(chars / 4);
 }
 
-/** Long / full by the last turn's prompt size, else by the number of user turns. */
+/** Long / full by the estimated context, or by the number of user turns — whichever trips first. */
 export function chatLimit(messages: readonly LimitMessage[]): ChatLimit {
-  const tokens = lastPromptTokens(messages);
-  if (tokens !== null) {
-    if (tokens >= envInt('CHAT_FULL_TOKENS', 150_000)) return 'full';
-    if (tokens >= envInt('CHAT_LONG_TOKENS', 80_000)) return 'long';
-    return null;
-  }
+  const tokens = contextTokens(messages);
+  if (tokens >= envInt('CHAT_FULL_TOKENS', 150_000)) return 'full';
   const turns = messages.filter((m) => m.role === 'user').length;
+  if (turns >= envInt('CHAT_FULL_TURNS', 40)) return 'full';
+  if (tokens >= envInt('CHAT_LONG_TOKENS', 80_000)) return 'long';
   if (turns >= envInt('CHAT_FULL_TURNS', 40)) return 'full';
   if (turns >= envInt('CHAT_LONG_TURNS', 20)) return 'long';
   return null;

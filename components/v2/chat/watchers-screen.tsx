@@ -54,6 +54,7 @@ export const EXAMPLE_PROMPTS = [
 ] as const;
 
 export interface WatchersActions {
+  readonly onOpenEmails?: () => void;
   readonly onPause: (w: W8) => Promise<void> | void;
   readonly onResume: (w: W8) => Promise<void> | void;
   readonly onCancel: (w: W8) => Promise<void> | void;
@@ -407,9 +408,9 @@ export function WatchersScreen({
                       </>
                     ) : null}
                   </span>
-                  <span className="em8" title={a.emailed ? `Emailed to ${email}` : 'Not emailed'}>
-                    {ic('mail')}
-                  </span>
+                  {a.emailed && actions.onOpenEmails ? <button className="em8" type="button" aria-label="View sent emails"
+                    onClick={e => { e.stopPropagation(); actions.onOpenEmails?.(); }}>{ic('mail')}</button> :
+                    <span className="em8" title={a.emailed ? `Emailed to ${email}` : 'Not emailed'}>{ic('mail')}</span>}
                   <span className="rx8">
                     <button data-a="trade" onClick={() => actions.onTrade(w)} type="button">
                       {KITE}Trade

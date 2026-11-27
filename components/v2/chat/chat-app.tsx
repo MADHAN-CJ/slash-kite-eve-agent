@@ -275,6 +275,31 @@ function LoggedInChat({ connectorUrl }: { readonly connectorUrl: string }) {
     },
     onFailed: (reason) => setNotice(reason),
   });
+  const emailLinkHandled = useRef(false);
+  useEffect(() => {
+    if (!tourReady || emailLinkHandled.current) return;
+    emailLinkHandled.current = true;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('emailSettings') === '1') setAccountOpen(true);
+    if (url.searchParams.get('view') === 'watchers') setView({ kind: 'watchers' });
+    const thread = url.searchParams.get('thread');
+    if (thread) setView({ kind: 'thread', id: thread }); // The API checks ownership.
+    const connect = url.searchParams.get('connect');
+    if (connect === '1' || connect === 'faq') {
+      kite.openDialog();
+      if (connect === 'faq') kite.faq();
+    }
+    const fix = url.searchParams.get('fixWatcher');
+    if (fix) void listWatches().then(items => {
+      const watch = items.find(w => w.id === fix);
+      if (!watch) { toast('Watcher not found.'); return; }
+      // A draft only: an email link never runs code or restarts a watcher.
+      setView({ kind: 'draft', n: Date.now() });
+      setPrefill({ text: `Help fix my watcher “${watch.label}”.\nError: ${watch.lastError ?? 'Not recorded'}\n\nScript:\n${watch.script}`, n: Date.now() });
+    }).catch(() => toast('Could not load the watcher. Please try again.'));
+    for (const key of ['emailSettings', 'view', 'thread', 'connect', 'fixWatcher']) url.searchParams.delete(key);
+    window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+  }, [tourReady, kite]);
   const sendSavedQuestion = useCallback((question: string) => {
     setAdopted(null);
     setView({ kind: 'draft', n: Date.now() });
@@ -436,6 +461,7 @@ function LoggedInChat({ connectorUrl }: { readonly connectorUrl: string }) {
     else setPrefill({ text, n: Date.now() });
   };
   const watcherActions = {
+    onOpenEmails: () => setAccountOpen(true),
     onPause: (w: W8) => mutate(w, 'pause', `${w.sym} paused. It stops checking until you resume.`),
     onResume: (w: W8) => mutate(w, 'resume', `${w.sym} is watching again. The next check sets a new baseline.`),
     onCancel: (w: W8) => mutate(w, 'cancel', `${w.sym} cancelled. It moved to Finished.`),
@@ -555,6 +581,7 @@ function LoggedInChat({ connectorUrl }: { readonly connectorUrl: string }) {
         usage={accountUsage(usage)}
         connectorUrl={connectorUrl}
         connectorNote="Your Kite connection is shared."
+        emailPreferences
         chatGpt={{ title: 'In review', description: '' }}
         onClose={() => setAccountOpen(false)}
         onConnect={() => kite.openDialog()}

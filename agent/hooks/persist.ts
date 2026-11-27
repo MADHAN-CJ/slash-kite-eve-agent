@@ -3,6 +3,7 @@ import {
   onActionResult,
   onActionsRequested,
   onAnyEvent,
+  onInputRequested,
   onMessageCompleted,
   onMessageReceived,
   onSessionEnded,
@@ -73,6 +74,10 @@ export default defineHook({
         actions: readonly { kind: string; callId: string; toolName?: string; input?: unknown }[];
       };
       await guard('actions.requested', onActionsRequested(ctx.session.id, d));
+    },
+    async 'input.requested'(event, ctx) {
+      const d = event.data as Parameters<typeof onInputRequested>[1];
+      await guard('input.requested', onInputRequested(ctx.session.id, d));
     },
     async 'action.result'(event, ctx) {
       const d = event.data as Parameters<typeof onActionResult>[1];

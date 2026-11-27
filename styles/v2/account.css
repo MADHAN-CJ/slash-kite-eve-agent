@@ -99,3 +99,14 @@
 }
 .pk6,.f6{z-index:90}
 .ac8-error{margin:8px 0;color:#ff7a77;font:13px/1.4 var(--sans)}
+
+.email-settings{border-top:1px solid var(--line);margin:14px 0;padding-top:12px;color:var(--body);font:13px/1.5 var(--sans)}
+.email-settings summary{cursor:pointer;color:var(--ink);font-weight:500;padding:5px 0}
+.email-settings fieldset{border:0;padding:8px 0;margin:0;min-width:0}
+.email-settings legend{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+.email-settings label{display:flex;align-items:center;gap:8px;color:var(--ink)}
+.email-settings input{accent-color:var(--sky)}
+.email-settings p{margin:5px 0 12px;color:var(--mute)}
+.email-settings ul{list-style:none;padding:0;margin:8px 0}
+.email-settings button{color:var(--ink);background:var(--raised);border:1px solid var(--line);border-radius:4px;padding:6px 9px;text-align:left;font:inherit;margin:4px 0;cursor:pointer;overflow-wrap:anywhere}
+.email-preview iframe{width:100%;height:480px;border:1px solid var(--line);margin-top:8px;background:#0F1114}

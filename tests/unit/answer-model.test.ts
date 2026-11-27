@@ -110,3 +110,25 @@ describe('the answer model', () => {
     expect(m.sources[1].asOf).toBe('14:32:03');
   });
 });
+
+describe('stored approvals (plan-v2 D8)', () => {
+  it('a parked create_watcher with a stored input_request comes back as the pending confirm card', async () => {
+    const { storedAnswer } = await import('@/lib/v2/answer-parts');
+    const m = storedAnswer(
+      '',
+      [
+        { type: 'tool_call', toolCallId: 'c1', toolName: 'kite__create_watcher', input: { symbol: 'GOLDBEES', label: 'GOLDBEES drops below ₹100', script: 'print(1)', market: 'NSE' } },
+        { type: 'input_request', toolCallId: 'c1', toolName: 'kite__create_watcher', requestId: 'req_1', options: [{ id: 'approve', label: 'Approve' }, { id: 'reject', label: 'Reject' }] },
+      ],
+      new Date().toISOString(),
+    );
+    expect(m.watcher?.state).toBe('pending');
+    expect(m.watcher?.approval).toEqual({ requestId: 'req_1', approveId: 'approve', rejectId: 'reject' });
+    expect(m.status).not.toBe('error');
+  });
+  it('a parked call that was never approved is not shown as a failure', async () => {
+    const { storedAnswer } = await import('@/lib/v2/answer-parts');
+    const m = storedAnswer('', [{ type: 'tool_call', toolCallId: 'c1', toolName: 'kite__create_watcher', input: { symbol: 'X' } }], new Date().toISOString());
+    expect(m.watcher?.state).toBe('failed');
+  });
+});

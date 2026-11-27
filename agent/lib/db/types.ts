@@ -15,7 +15,13 @@ export type MessagePart =
       input: unknown;
     }
   | { type: 'tool_result'; toolCallId: string; toolName: string; output: unknown }
-  | { type: 'tool_error'; toolCallId: string; toolName: string; error: string };
+  | { type: 'tool_error'; toolCallId: string; toolName: string; error: string }
+  /**
+   * A call parked for the user's approval (eve `input.requested`): kept so a
+   * reloaded thread can still show the confirm card and answer it. Superseded
+   * by the call's result once the user responds.
+   */
+  | { type: 'input_request'; toolCallId: string; toolName: string; requestId: string; options: { id: string; label?: string }[] };
 
 /** Token accounting for one assistant turn (summed across its model steps). */
 export interface Usage {

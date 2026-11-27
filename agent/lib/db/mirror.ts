@@ -263,6 +263,42 @@ export async function onActionsRequested(
   await flushAssistant(buf);
 }
 
+/** eve `input.requested`: an approval parked on a tool call (plan-v2 D8 confirm card). */
+export async function onInputRequested(
+  sessionId: string,
+  data: {
+    turnId?: string;
+    sequence?: number;
+    requests: readonly {
+      requestId: string;
+      action?: { kind?: string; callId?: string; toolName?: string };
+      options?: readonly { id: string; label?: string }[];
+    }[];
+  },
+): Promise<void> {
+  const parts: MessagePart[] = [];
+  for (const r of data.requests) {
+    if (r.action?.kind !== 'tool-call' || !r.action.callId) continue;
+    parts.push({
+      type: 'input_request',
+      toolCallId: r.action.callId,
+      toolName: r.action.toolName ?? 'tool',
+      requestId: r.requestId,
+      options: (r.options ?? []).map((o) => ({ id: o.id, label: o.label })),
+    });
+  }
+  if (parts.length === 0) return;
+  // The request belongs to the turn whose call it parks: find the buffer holding that call.
+  let buf: TurnBuffer | undefined;
+  for (const b of buffers.values()) {
+    if (b.sessionId === sessionId && b.parts.some((p) => p.type === 'tool_call' && parts.some((q) => q.toolCallId === p.toolCallId))) buf = b;
+  }
+  if (!buf && data.turnId) buf = buffers.get(bufferKey(sessionId, data.turnId));
+  if (!buf) return appendDurable(sessionId, data.sequence ?? 0, { parts });
+  buf.parts.push(...parts);
+  await flushAssistant(buf);
+}
+
 export async function onActionResult(
   sessionId: string,
   data: {
