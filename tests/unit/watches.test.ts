@@ -31,7 +31,7 @@ const row = (over: Partial<WatcherRow> = {}): WatcherRow => ({
 });
 
 describe('watcher summary', () => {
-  it('maps the MCP row to what the UI shows, never exposing the script', () => {
+  it('maps the MCP row to what the UI shows (the script is the user\'s own; v2 shows it), never the owner id', () => {
     const alerts = [{ at: '2026-11-26T05:30:00.000Z', value: '70.1', detail: null }];
     const s = summarize(row({ firedCount: 2, lastFiredAt: new Date('2026-11-26T05:30:00Z') }), alerts);
     expect(s).toMatchObject({
@@ -45,8 +45,11 @@ describe('watcher summary', () => {
       expiresAt: '2026-12-03T10:00:00.000Z',
       recentAlerts: alerts,
     });
-    expect(s).not.toHaveProperty('script');
+    expect(s.script).toBe('print(1)');
+    expect(s.lastMet).toBe(false);
+    expect(s.threadId).toBeNull();
     expect(s).not.toHaveProperty('userId');
+    expect(summarize(row(), [], { threadId: 't1', title: 'Chat' })).toMatchObject({ threadId: 't1', threadTitle: 'Chat' });
   });
 
   it('keeps never-checked and never-fired watchers null', () => {

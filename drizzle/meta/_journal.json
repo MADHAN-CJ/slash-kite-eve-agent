@@ -8,6 +8,13 @@
       "when": 1795683166196,
       "tag": "0000_eve_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1795760705017,
+      "tag": "0001_watcher_links",
+      "breakpoints": true
     }
   ]
 }

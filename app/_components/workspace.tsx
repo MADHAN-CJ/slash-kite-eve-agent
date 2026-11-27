@@ -77,14 +77,21 @@ export function Workspace() {
   // Session epoch: bumped on login/logout; keys the whole workspace.
   const [authEpoch, setAuthEpoch] = useState(0);
   const [loggedIn, setLoggedIn] = useState(false);
+  const [returning, setReturning] = useState(false);
   useEffect(() => {
-    setLoggedIn(isLoggedIn());
+    const signedIn = isLoggedIn();
+    const returnTo = new URL(window.location.href).searchParams.get('returnTo');
+    if (signedIn && returnTo && /^\/chat(?:\?|$)/.test(returnTo)) {
+      setReturning(true);
+      window.location.replace(returnTo);
+    } else setLoggedIn(signedIn);
   }, [authEpoch]);
 
   const logout = useCallback(() => {
     void apiLogout().finally(() => setAuthEpoch((n) => n + 1));
   }, []);
 
+  if (returning) return null;
   if (!loggedIn) {
     return <Login onLoggedIn={() => setAuthEpoch((n) => n + 1)} />;
   }

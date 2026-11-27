@@ -48,11 +48,24 @@ export function liveAnswer(message: EveMessage, opts: { streaming: boolean; stop
       case 'output-denied':
         tools.push({ ...base, state: 'denied' });
         break;
+      case 'approval-requested': {
+        const req = part.toolMetadata?.eve?.inputRequest;
+        const opts = req?.options ?? [];
+        const approveId = opts.find((o) => /approve|allow|yes/i.test(`${o.id} ${o.label}`))?.id ?? 'approve';
+        const rejectId = opts.find((o) => /reject|deny|no\b/i.test(`${o.id} ${o.label}`))?.id ?? 'reject';
+        tools.push({ ...base, state: 'awaiting', approval: req ? { requestId: req.requestId, approveId, rejectId } : undefined });
+        break;
+      }
+      case 'approval-responded':
+        tools.push({ ...base, state: part.approval.approved === false ? 'denied' : 'running' });
+        break;
       default:
         tools.push({ ...base, state: 'running' });
     }
   }
-  return buildAnswer({ text: texts.join('\n\n'), tools, streaming: opts.streaming, stopped: opts.stopped, error: opts.error });
+  // A call parked for approval means the turn is waiting on the user: the answer is as done as it gets.
+  const parked = tools.some((t) => t.state === 'awaiting');
+  return buildAnswer({ text: texts.join('\n\n'), tools, streaming: opts.streaming && !parked, stopped: opts.stopped, error: opts.error });
 }
 
 export function storedAnswer(content: string, parts: MessagePart[], createdAt: string): AnswerModel {

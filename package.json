@@ -33,6 +33,7 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.10",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@radix-ui/react-use-controllable-state": "1.2.2",
     "@shikijs/core": "4.1.0",
     "@shikijs/engine-javascript": "4.1.0",
@@ -68,7 +69,6 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@modelcontextprotocol/sdk": "^1.32.2",
     "@types/node": "24.x",
     "@types/pg": "^8.20.0",
     "@types/react": "19.2.15",

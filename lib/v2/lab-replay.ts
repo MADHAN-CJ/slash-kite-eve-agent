@@ -73,13 +73,43 @@ export const NO_DATA_TOOLS: ToolActivity[] = [
   },
 ];
 
+/** The watcher question's run (run.js `watcherDemo`): write the rule, test it once, then the confirm card. */
+export const WATCH_Q = 'Tell me when RELIANCE closes below 2,912 on the 15-min chart';
+export const WATCH_TEXT = 'I wrote your rule as a short script and ran it once on today’s candles. It isn’t true right now.';
+export const WATCH_SCRIPT = 'candles = markets.history("RELIANCE", interval="15m", n=2)\nlast = candles[-2]                  # the last closed candle\nmet = last.close < 2912\nprint(json.dumps({"met": met, "value": last.close}))';
+export const WATCH_TOOLS: ToolActivity[] = [
+  {
+    callId: 'w1',
+    toolName: 'kite__run_python',
+    input: { code: `# Write your rule as a short script\n${WATCH_SCRIPT}` },
+    output: result(96, ['Last closed candle: 2,948.40'], { dataset: 'Price history', symbol: 'RELIANCE', interval: '15m', rows: 2, range: 'today', values: [['Last closed candle', '2,948.40']] }),
+    state: 'ok',
+    at: '14:33:40',
+  },
+  {
+    callId: 'w2',
+    toolName: 'kite__run_python',
+    input: { code: `# Test it once on today’s candles\n${WATCH_SCRIPT}` },
+    output: result(41, ['{"met": false, "value": 2948.4}'], { dataset: 'Watcher dry run', symbol: 'RELIANCE', rows: 1, values: [['Now', '2,948 · 36 above your level · not met']] }),
+    state: 'ok',
+    at: '14:33:41',
+  },
+  {
+    callId: 'w3',
+    toolName: 'kite__create_watcher',
+    input: { symbol: 'NSE:RELIANCE', label: 'a 15-min candle closes below 2,912', script: WATCH_SCRIPT.replace(/ +# the last closed candle/, ''), check_every_minutes: 15, expires_in_days: 30, market: 'NSE' },
+    state: 'awaiting',
+    approval: { requestId: 'lab-req', approveId: 'approve', rejectId: 'reject' },
+  },
+];
+
 export interface ReplayFrame {
   model: AnswerModel;
   /** The whole run is over (idle again). */
   done: boolean;
 }
 
-export type ReplayKind = 'run' | 'answer' | 'stopped' | 'timeout' | 'kite-expired' | 'no-market-data';
+export type ReplayKind = 'run' | 'answer' | 'stopped' | 'timeout' | 'kite-expired' | 'no-market-data' | 'watch';
 
 const wordsOf = (text: string) => text.match(/\S+\s*/g) ?? [];
 
@@ -92,15 +122,15 @@ const wordsOf = (text: string) => text.match(/\S+\s*/g) ?? [];
 export function replay(kind: ReplayKind, emit: (f: ReplayFrame) => void): () => void {
   const timers: number[] = [];
   const later = (ms: number, fn: () => void) => timers.push(window.setTimeout(fn, ms));
-  const tools = kind === 'no-market-data' ? NO_DATA_TOOLS : RELIANCE_TOOLS;
-  const fullText = kind === 'no-market-data' ? NO_DATA_REPLY : ANSWER_TEXT;
+  const tools = kind === 'no-market-data' ? NO_DATA_TOOLS : kind === 'watch' ? WATCH_TOOLS : RELIANCE_TOOLS;
+  const fullText = kind === 'no-market-data' ? NO_DATA_REPLY : kind === 'watch' ? WATCH_TEXT : ANSWER_TEXT;
 
   const snapshot = (called: number, running: boolean, text: string, extra: Partial<Parameters<typeof buildAnswer>[0]> = {}): AnswerModel => {
-    const acts: ToolActivity[] = tools.slice(0, called).map((t, i) => (i === called - 1 && running ? { ...t, output: undefined, state: 'running' } : t));
+    const acts: ToolActivity[] = tools.slice(0, called).map((t, i) => (i === called - 1 && running && t.state !== 'awaiting' ? { ...t, output: undefined, state: 'running' } : t));
     const m = buildAnswer({ text, tools: acts, streaming: true, ...extra });
     // The prototype lists every step before any runs: show the rest as pending.
     for (const t of tools.slice(called)) {
-      const planned = buildAnswer({ text: '', tools: [{ ...t, output: undefined, state: 'running' }], streaming: true }).steps[0];
+      const planned = buildAnswer({ text: '', tools: [t.state === 'awaiting' ? t : { ...t, output: undefined, state: 'running' }], streaming: true }).steps[0];
       if (planned) m.steps.push({ ...planned, status: 'pending', ms: undefined });
     }
     if (!extra.stopped && !extra.error && m.steps.some((s) => s.status === 'pending') && !m.steps.some((s) => s.status === 'running')) m.status = 'planning';

@@ -196,6 +196,7 @@ export function AnswerMessage({
   onTrade,
   onEditQuestion,
   onReconnect,
+  afterFirstParagraph,
 }: {
   readonly model: AnswerModel;
   readonly index: number;
@@ -206,6 +207,8 @@ export function AnswerMessage({
   readonly onTrade?: (symbol: string) => void;
   readonly onEditQuestion?: () => void;
   readonly onReconnect?: () => void;
+  /** Drawn inside the text, right after its first paragraph (the watcher confirm card). */
+  readonly afterFirstParagraph?: React.ReactNode;
 }) {
   const m = model;
   const live = m.status === 'planning' || m.status === 'running' || m.status === 'writing';
@@ -308,6 +311,26 @@ export function AnswerMessage({
             </button>
           </div>
         </div>
+      ) : afterFirstParagraph ? (
+        // The card sits inside .md after the first paragraph, as run.js inserts it; display:contents keeps
+        // the two halves of the text as direct children of .md for its spacing rules.
+        // biome-ignore lint/a11y/useKeyWithClickEvents: marks and chips are buttons inside
+        <div className="md" onClick={onBody}>
+          {(() => {
+            const cut = html.indexOf('</p>');
+            const head = cut >= 0 ? html.slice(0, cut + 4) : html;
+            const tail = cut >= 0 ? html.slice(cut + 4) : '';
+            return (
+              <>
+                {/* biome-ignore lint/security/noDangerouslySetInnerHtml: sanitised by DOMPurify in renderMarkdown */}
+                <div dangerouslySetInnerHTML={{ __html: head }} style={{ display: 'contents' }} />
+                {afterFirstParagraph}
+                {/* biome-ignore lint/security/noDangerouslySetInnerHtml: sanitised by DOMPurify in renderMarkdown */}
+                {tail ? <div dangerouslySetInnerHTML={{ __html: tail }} style={{ display: 'contents' }} /> : null}
+              </>
+            );
+          })()}
+        </div>
       ) : m.text || live ? (
         // biome-ignore lint/security/noDangerouslySetInnerHtml: sanitised by DOMPurify in renderMarkdown
         <div className="md" dangerouslySetInnerHTML={{ __html: html }} onClick={onBody} />
@@ -370,10 +393,12 @@ export function AnswerMessage({
         <div className="act" data-sym={firstSymbol}>
           {hasSources ? (
             <>
+              {m.watcher ? null : (
               <button className="a5" data-f5="watch" onClick={() => onWatch?.(firstSymbol)} type="button">
                 <Icon name="bell" />
                 <span>Watch this</span>
               </button>
+              )}
               <button className="a5" data-f5="trade" onClick={() => onTrade?.(firstSymbol)} type="button">
                 <KiteMark />
                 <span>Trade on Kite</span>

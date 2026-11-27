@@ -82,7 +82,7 @@ with sync_playwright() as pw:
     compare("answer, scrolled to the top (thread column)", ours, proto, MAIN)
     both(lambda p: p.click(".th6c"))
     compare("plan unfolds", ours, proto, MAIN)
-    check("plan lists the real steps", ours.locator(".pl6 li.is-ok").count() == 2 and "python · RELIANCE 1D · 60 rows · 142 ms" in ours.locator(".pl6 li small").first.text_content())
+    check("plan lists the real steps", ours.locator(".pl6 li.is-ok").count() == 2 and "python · RELIANCE 1D · 60 candles · 142 ms" in ours.locator(".pl6 li small").first.text_content())
     both(lambda p: p.click(".th6c"))
     both(lambda p: p.click('.tb5 [data-t5="code"]'))
     check("Code tab shows the scripts with their headers", "# [1] Price history · 142 ms" in ours.locator(".co5 pre").text_content() and ours.locator(".co5 pre").is_visible())

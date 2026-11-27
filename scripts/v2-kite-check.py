@@ -144,7 +144,8 @@ with sync_playwright() as p:
     check("the saved question was sent", "Reliance" in page.locator(".msg.u").first.text_content())
     page.wait_for_function("!document.querySelector('.app').classList.contains('busy')", timeout=300_000)
     st = api("GET", "/api/broker", token)
-    check("the session is stored for the MCP", st["status"] == "active" and st["kiteUserId"] == "AB1234")
+    # With the local MCP running, the question really runs and the stand-in token is rejected → token_expired.
+    check("the session was stored for the MCP", st["kiteUserId"] == "AB1234" and st["status"] in ("active", "token_expired"), st["status"])
 
     # disconnect → the window closed early → fail → Cancel
     api("DELETE", "/api/broker", token)

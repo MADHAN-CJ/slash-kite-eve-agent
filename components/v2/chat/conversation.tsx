@@ -11,6 +11,10 @@ import { ChatShell, type ChatShellProps } from './chat-shell';
 import type { ComposerHandle } from './composer';
 import { SourcesList, SourcesPane } from './sources-panel';
 import { toast } from './toast';
+import { WatcherConfirmCard } from './watcher-card';
+import { useWatchThis } from './use-watch-this';
+import type { WatcherCard } from '@/lib/v2/answer-model';
+import type { TradeContext } from '@/lib/v2/trade';
 
 /**
  * One conversation on the v2 shell: the persisted history (from our DB)
@@ -36,8 +40,20 @@ export function Conversation({
   queued,
   onQueuedSent,
   afterThread,
+  email,
+  onOpenWatchers,
+  prefillText,
+  onPrefilled,
+  onTrade,
   ...shell
 }: ShellPassthrough & {
+  /** Put into the box once on mount (Fix it in chat, Watch again). */
+  readonly prefillText?: string;
+  readonly onPrefilled?: () => void;
+  readonly onTrade?: (context: TradeContext) => void;
+  /** The signed-in email (watcher alerts go there). */
+  readonly email?: string;
+  readonly onOpenWatchers?: () => void;
   readonly history: ApiMessage[];
   readonly session?: { sessionId: string; streamIndex: number };
   readonly title: string | null;
@@ -144,6 +160,58 @@ export function Conversation({
     await navigator.clipboard.writeText(lines.join('\n\n'));
   };
 
+  // --- Watch this (run.js watchFrom): level guesses above the box, the prompt written for you ---
+  const watchThis = useWatchThis(dock, busy);
+  const { prefill, watchFrom } = watchThis;
+  const watchPanel = watchThis.panel;
+  const askAndCloseWatch = (text: string) => {
+    watchThis.close();
+    ask(text);
+  };
+
+  // --- the watcher confirm card: Start = approve the parked create_watcher, Change it = reject + edit ---
+  const respond = (card: WatcherCard, optionId: string | undefined) => {
+    if (!card.approval || !optionId) return;
+    void agent.send({ inputResponses: [{ requestId: card.approval.requestId, optionId }] });
+  };
+  const startWatcher = (card: WatcherCard) => {
+    respond(card, card.approval?.approveId);
+    toast('Watcher started. It keeps running after you close this chat.');
+  };
+  const changeWatcher = (card: WatcherCard, question: string) => {
+    respond(card, card.approval?.rejectId);
+    prefill(question, (question.match(/\d[\d,]*/) ?? [''])[0] || undefined);
+  };
+  const cardFor = (model: AnswerModel, question: string) =>
+    model.watcher ? (
+      <WatcherConfirmCard
+        card={model.watcher}
+        disabled={busy}
+        email={email}
+        onChange={changeWatcher}
+        onOpenWatchers={() => onOpenWatchers?.()}
+        onStart={startWatcher}
+        onTrade={() => onTrade?.({ symbol: model.watcher!.symbol, exchange: model.watcher!.market, from: 'watcher', label: model.watcher!.label, rule: model.watcher!.label })}
+        question={question}
+      />
+    ) : undefined;
+  const questionBefore = (i: number, list: { role: string; text: string }[]) => [...list.slice(0, i)].reverse().find((x) => x.role === 'user')?.text ?? '';
+  const flat = [
+    ...history.map((m) => ({ role: m.role, text: m.content })),
+    ...live.map((m) => ({ role: m.role, text: m.parts.map((p) => (p.type === 'text' ? p.text : '')).join('') })),
+  ];
+
+  const prefilled = useRef(false);
+  useEffect(() => {
+    if (!prefillText || prefilled.current) return;
+    prefilled.current = true;
+    const t = window.setTimeout(() => {
+      (empty ? hero : dock).current?.setValue(prefillText, { start: prefillText.length, end: prefillText.length });
+      onPrefilled?.();
+    }, 60);
+    return () => window.clearTimeout(t);
+  }, [prefillText, empty, onPrefilled]);
+
   const shownTitle = title ?? (lastQuestion ? lastQuestion.slice(0, 52) : '');
   const userText = (m: EveMessage) => m.parts.map((p) => (p.type === 'text' ? p.text : '')).join('');
   let index = 0;
@@ -152,11 +220,12 @@ export function Conversation({
     <ChatShell
       {...shell}
       busy={busy}
+      dockAbove={watchPanel}
       dockRef={dock}
       empty={empty}
       hasSources={busy || panelSources.length > 0}
       heroRef={hero}
-      onAsk={ask}
+      onAsk={askAndCloseWatch}
       onShare={share}
       onStop={stop}
       pulseKey={pulseKey}
@@ -170,15 +239,16 @@ export function Conversation({
         const model = storedModels.find(([id]) => id === m.id)?.[1];
         return model ? (
           <AnswerMessage
+            afterFirstParagraph={cardFor(model, questionBefore(i, flat))}
             index={i}
             key={m.id}
             model={model}
             onEditQuestion={() => dock.current?.setValue(lastQuestion)}
-            onFollowup={ask}
+            onFollowup={askAndCloseWatch}
             onReconnect={shell.onConnectKite}
             onRetry={() => ask(lastQuestion)}
-            onTrade={() => toast('Trade on Kite comes with a later phase.')}
-            onWatch={(sym) => dock.current?.setValue(`Tell me when ${sym} `)}
+            onTrade={(symbol) => onTrade?.({ symbol, from: 'answer', label: questionBefore(i, flat) })}
+            onWatch={(sym) => watchFrom(model, sym)}
           />
         ) : null;
       })}
@@ -188,15 +258,16 @@ export function Conversation({
         const model = models.get(m.id);
         return model ? (
           <AnswerMessage
+            afterFirstParagraph={cardFor(model, questionBefore(i, flat))}
             index={i}
             key={m.id}
             model={model}
             onEditQuestion={() => dock.current?.setValue(lastQuestion)}
-            onFollowup={ask}
+            onFollowup={askAndCloseWatch}
             onReconnect={shell.onConnectKite}
             onRetry={() => ask(lastQuestion)}
-            onTrade={() => toast('Trade on Kite comes with a later phase.')}
-            onWatch={(sym) => dock.current?.setValue(`Tell me when ${sym} `)}
+            onTrade={(symbol) => onTrade?.({ symbol, from: 'answer', label: questionBefore(i, flat) })}
+            onWatch={(sym) => watchFrom(model, sym)}
           />
         ) : null;
       })}

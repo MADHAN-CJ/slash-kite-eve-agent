@@ -1,0 +1,104 @@
+/* trade: Trade on Kite. Styles for this flow only. */
+/* ===== flow 07: trade on kite ===== */
+.tk7s{position:fixed;inset:0;z-index:80;display:none;align-items:center;justify-content:center;gap:24px;padding:24px;background:rgba(5,6,8,.62);backdrop-filter:blur(2px)}
+.tk7s.is-on{display:flex}
+.tk7{position:relative;width:420px;max-width:100%;max-height:calc(100vh - 48px);overflow:auto;border-radius:14px;border:1px solid var(--line2);background:var(--surface);box-shadow:0 24px 64px rgba(0,0,0,.5);animation:tk7in .22s var(--ease,ease-out) both}
+@keyframes tk7in{from{opacity:0;transform:translateY(8px)}}
+.tk7 .hd7{display:flex;align-items:center;gap:10px;padding:16px 18px 12px}
+.tk7 .hd7 h2{margin:0;font:500 16px var(--sans);color:var(--ink)}
+.tk7 .hd7 small{font:400 10.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--mute);padding:3px 6px;border:1px solid var(--line);border-radius:4px}
+.tk7 .x7{margin-left:auto;width:30px;height:30px;border-radius:6px;display:grid;place-items:center;color:var(--mute)}
+.tk7 .x7:hover{background:var(--raised);color:var(--ink)}
+.tk7 .x7 svg{width:16px;height:16px}
+.tk7 .bd7{padding:0 18px 18px}
+.sy7{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;padding:14px;border-radius:10px;background:var(--bg);border:1px solid var(--line)}
+.sy7 b{font:500 19px var(--sans);color:var(--ink);letter-spacing:-.01em}
+.sy7 .ex{font:400 11px var(--mono);color:var(--mute)}
+.sy7 .px{margin-left:auto;text-align:right;font:400 17px var(--mono);color:var(--ink)}
+.sy7 .px small{display:block;font-size:10.5px;color:var(--mute)}
+.sy7 .fr{flex-basis:100%;font-size:12.5px;color:var(--mute);display:flex;align-items:center;gap:6px}
+.sy7 .fr svg{width:13px;height:13px}
+.fd7{margin-top:16px}
+.err7:not([hidden]){display:block;margin-top:5px;color:#ff7a77;font:12px/1.35 var(--sans)}
+.tk7 .fd7 label,.tk7 .fd7 span.l{display:flex;justify-content:space-between;gap:8px;margin:0 0 6px;font:400 12.5px var(--sans);color:var(--body);text-transform:none;letter-spacing:0}
+.tk7 .fd7 label em,.tk7 .fd7 span.l em{font:400 11px var(--mono);font-style:normal;color:var(--mute)}
+.sg7{display:flex;gap:4px;padding:3px;border-radius:8px;background:var(--bg);border:1px solid var(--line)}
+.sg7 button{flex:1;height:34px;border-radius:6px;font-size:13.5px;color:var(--body);display:grid;line-height:1.1;place-content:center;text-align:center}
+.sg7 button small{font-size:10.5px;color:var(--mute)}
+.sg7 button:hover{color:var(--ink)}
+.sg7 button.is-on{background:var(--raised);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line2)}
+.sg7.bs7 button.is-on[data-v="BUY"]{background:color-mix(in srgb,var(--sky) 22%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--sky) 60%,transparent)}
+.sg7.bs7 button.is-on[data-v="SELL"]{background:rgba(255,122,119,.16);box-shadow:inset 0 0 0 1px rgba(255,122,119,.55)}
+.sg7.tall button{height:42px}
+.hn7{margin-top:6px;font-size:12px;color:var(--mute)}
+.r7{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.st7{display:flex;align-items:center;height:40px;border-radius:8px;border:1px solid var(--line);background:var(--bg)}
+.st7 button{width:38px;height:100%;color:var(--body);font-size:18px}
+.st7 button:hover{color:var(--ink)}
+.st7 input,.pr7 input{flex:1;min-width:0;width:100%;height:100%;border:0;background:none;color:var(--ink);font:400 15px var(--mono);text-align:center;outline:0}
+.pr7{display:flex;align-items:center;height:40px;padding:0 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg)}
+.pr7 span{font:400 13px var(--mono);color:var(--mute)}
+.pr7 input{text-align:left;padding-left:4px}
+.pr7.is-off{opacity:.45}
+.st7:focus-within,.pr7:focus-within{border-color:rgba(140,184,255,.6)}
+.sm7{display:flex;justify-content:space-between;gap:10px;margin-top:16px;padding-top:12px;border-top:1px solid var(--line);font-size:13px;color:var(--body)}
+.sm7 b{font:400 13px var(--mono);color:var(--ink)}
+.go7{margin-top:14px;width:100%;height:46px;border-radius:8px;display:flex;align-items:center;justify-content:center;gap:10px;font:500 15px var(--sans);color:#fff;background:#3D6BFF}
+.go7.sell{background:#E2504C}
+.go7:disabled{background:var(--raised);color:var(--mute);cursor:not-allowed}
+.go7 svg{width:20px;height:15px}
+.go7:disabled svg{opacity:.5}
+.nt7{margin:10px 0 0;font-size:12px;line-height:1.5;color:var(--mute);text-align:center}
+.lg7{margin:12px -18px -18px;padding:10px 18px;border-top:1px solid var(--line);font-size:11.5px;color:var(--mute);text-align:center}
+/* waiting / closed / blocked */
+.ms7{text-align:center;padding:8px 0 4px}
+.ms7 .ic{width:46px;height:46px;margin:6px auto 12px;border-radius:50%;display:grid;place-items:center;background:var(--bg);border:1px solid var(--line)}
+.ms7 .ic svg{width:20px;height:20px}
+.ms7 .sp{width:20px;height:20px;border-radius:50%;border:2px solid var(--line2);border-top-color:var(--sky);animation:spin7 .9s linear infinite}
+@keyframes spin7{to{transform:rotate(360deg)}}
+.ms7 h3{margin:0 0 6px;font:500 17px var(--sans);color:var(--ink)}
+.ms7 p{margin:0 auto 14px;max-width:320px;font-size:13.5px;line-height:1.5;color:var(--body)}
+.ms7.er .ic{color:var(--down);border-color:rgba(255,122,119,.4)}
+.ms7.ok .ic{color:var(--mint)}
+.od7{display:flex;justify-content:space-between;gap:10px;padding:10px 12px;border-radius:8px;background:var(--bg);border:1px solid var(--line);font:400 12.5px var(--mono);color:var(--body);text-align:left}
+.od7 b{color:var(--ink);font-weight:400}
+.bt7{display:flex;gap:8px;margin-top:14px}
+.bt7 button{flex:1;height:40px;border-radius:8px;font-size:14px;font-weight:500;border:1px solid var(--line2);color:var(--ink)}
+.bt7 button.p{background:var(--btn);color:var(--btn-ink);border-color:transparent}
+.ln7{margin-top:10px;font-size:13px;color:var(--mute)}
+.ln7 button{color:var(--sky);font-size:13px}
+.ln7 button:hover{text-decoration:underline}
+/* Kite's own window, drawn as a stand-in */
+.kw7{width:440px;max-width:100%;height:520px;max-height:calc(100vh - 48px);display:flex;flex-direction:column;border-radius:10px;overflow:hidden;background:#F4F5F7;color:#333;box-shadow:0 24px 64px rgba(0,0,0,.55);animation:tk7in .3s ease-out both}
+.kw7 .bar{display:flex;align-items:center;gap:6px;height:34px;padding:0 10px;background:#E3E5E8;border-bottom:1px solid #D2D5DA}
+.kw7 .bar i{width:10px;height:10px;border-radius:50%;background:#C9CCD1}
+.kw7 .bar i:first-child{background:#EE6A5F}
+.kw7 .bar span{flex:1;margin-left:8px;height:22px;border-radius:5px;background:#fff;font:400 11.5px var(--mono);color:#555;display:flex;align-items:center;padding:0 8px;gap:6px}
+.kw7 .bar span svg{width:11px;height:11px}
+.kw7 .bd{flex:1;display:grid;place-items:center;padding:26px;text-align:center}
+.kw7 .sk{display:grid;gap:10px;width:100%;margin-bottom:22px}
+.kw7 .sk i{display:block;height:12px;border-radius:4px;background:#E1E3E7}
+.kw7 .sk i:nth-child(1){width:40%;height:18px}
+.kw7 .sk i:nth-child(2){width:80%}.kw7 .sk i:nth-child(3){width:65%}
+.kw7 .sk i:nth-child(4){height:40px;border-radius:6px;margin-top:8px}
+.kw7 h4{margin:0 0 6px;font:500 15px var(--sans);color:#222}
+.kw7 p{margin:0 0 16px;font-size:13px;line-height:1.5;color:#666}
+.kw7 button{height:34px;padding:0 14px;border-radius:6px;border:1px solid #C9CCD1;background:#fff;color:#333;font-size:13px}
+.kw7 button:hover{border-color:#999}
+.kw7 .cap{font:400 10.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:#888;margin-bottom:10px}
+@media(max-width:900px){
+  .tk7s{align-items:flex-end;padding:0;gap:0}
+  .tk7{width:100%;border-radius:16px 16px 0 0;max-height:92vh;padding-bottom:90px}
+  .tk7s.is-win .tk7{display:none}
+  .kw7{width:100%;height:100%;max-height:none;border-radius:0}
+  .pk6{left:8px;right:8px;bottom:8px;z-index:90}.pk6 .lb{display:none}.pk6 .seg{flex:1;overflow-x:auto}.pk6 .seg button{flex:none;padding:0 10px;white-space:nowrap}
+  .f6{left:8px;right:8px;width:auto;bottom:54px;z-index:90}
+}
+.pk6,.f6{z-index:90}
+/* Real metadata adds a contract choice only when the source is ambiguous. */
+.tk7 select{width:100%;height:40px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:13px var(--sans)}
+.tk7 .trade-note{margin:10px 0 0;color:var(--body);font:13px/1.5 var(--sans)}
+.tk7 .trade-note button{color:var(--sky);text-decoration:underline}
+/* Publisher owns this overlay on phones; it must sit above our ticket. */
+#kite-modal-wrap{z-index:1000!important}
+@media(prefers-reduced-motion:reduce){.tk7,.kw7,.ms7 .sp{animation:none}}

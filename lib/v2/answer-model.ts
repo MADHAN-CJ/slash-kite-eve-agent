@@ -67,8 +67,25 @@ export interface RunStep {
 
 export type AnswerStatus = 'planning' | 'running' | 'writing' | 'done' | 'stopped' | 'error';
 
+/** The watcher confirm card (markets-hero run.js `wCard`) for a create_watcher call. */
+export interface WatcherCard {
+  callId: string;
+  state: 'pending' | 'live' | 'declined' | 'failed';
+  symbol: string;
+  label: string;
+  script: string;
+  everyMinutes: number;
+  expiresDays: number;
+  market: string;
+  /** The value of the last dry run, when one is known. */
+  now: string | null;
+  error?: string;
+  approval?: { requestId: string; approveId: string; rejectId: string };
+}
+
 export interface AnswerModel {
   status: AnswerStatus;
+  watcher: WatcherCard | null;
   /** The text to show, with `@@chart` / `@@source` lines and `ui:` fences removed. */
   text: string;
   steps: RunStep[];
@@ -95,7 +112,9 @@ export interface ToolActivity {
   input: unknown;
   output?: unknown;
   error?: string;
-  state: 'running' | 'ok' | 'error' | 'denied';
+  state: 'running' | 'ok' | 'error' | 'denied' | 'awaiting';
+  /** A call parked for the user's approval (create_watcher's confirm card). */
+  approval?: { requestId: string; approveId: string; rejectId: string };
   /** HH:MM:SS, when known. */
   at?: string;
   /** Wall time between request and result, when the stream clock gave it. */
@@ -294,7 +313,15 @@ function stepFor(a: ToolActivity, source: RunSource | null): RunStep {
   if (source.kind === 'python') {
     const what = commentInCode(source.code ?? '');
     const label = what || (source.symbol ? `Run a script on ${source.symbol}` : 'Run a script next to the data');
-    const bits = ['python', [source.symbol, source.interval].filter(Boolean).join(' '), source.rows !== undefined ? `${source.rows} ${source.rows === 1 ? 'row' : 'rows'}` : ''].filter(Boolean);
+    if (/dry run/i.test(source.dataset)) {
+      // The watcher's test run (run.js: "watcher · dry run · not met").
+      const result = source.values[0]?.[1] ?? '';
+      const met = /not met/i.test(result) ? 'not met' : /\bmet\b/i.test(result) ? 'met' : '';
+      return { callId: a.callId, label, detail: ['watcher', 'dry run', met].filter(Boolean).join(' · '), status, ms, source };
+    }
+    const unit = /history|candle/i.test(source.dataset) ? 'candles' : 'rows';
+    const count = source.rows !== undefined ? `${source.rows} ${source.rows === 1 ? unit.replace(/s$/, '') : unit}` : '';
+    const bits = ['python', [source.symbol, source.interval].filter(Boolean).join(' '), count].filter(Boolean);
     return { callId: a.callId, label, detail: bits.join(' · '), status, ms, source };
   }
   if (source.kind === 'search') {
@@ -305,6 +332,31 @@ function stepFor(a: ToolActivity, source: RunSource | null): RunStep {
     return { callId: a.callId, label: base === 'create_watcher' ? `Save the watcher${source.symbol ? ` on ${source.symbol}` : ''}` : 'List your watchers', detail: `watcher${source.symbol ? ` · ${source.symbol}` : ''}`, status, ms, source };
   }
   return { callId: a.callId, label: source.dataset, detail: source.kind, status, ms, source };
+}
+
+const num = (v: unknown, d: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+
+function watcherCard(a: ToolActivity, sources: RunSource[]): WatcherCard {
+  const i = (a.input ?? {}) as { symbol?: unknown; label?: unknown; script?: unknown; check_every_minutes?: unknown; expires_in_days?: unknown; market?: unknown };
+  const out = (a.output as { structuredContent?: unknown } | undefined)?.structuredContent ?? a.output;
+  const created = (out ?? {}) as { created?: boolean; error?: string | null; watcher?: { market?: string; dryRun?: { value?: unknown } } };
+  const dry = [...sources].reverse().find((s) => /dry run/i.test(s.dataset));
+  const dryNow = created.watcher?.dryRun?.value ?? dry?.values[0]?.[1] ?? null;
+  const state: WatcherCard['state'] =
+    a.state === 'awaiting' || a.state === 'running' ? 'pending' : a.state === 'denied' ? 'declined' : a.state === 'error' || created.created === false ? 'failed' : 'live';
+  return {
+    callId: a.callId,
+    state,
+    symbol: typeof i.symbol === 'string' ? i.symbol : '',
+    label: typeof i.label === 'string' ? i.label : '',
+    script: typeof i.script === 'string' ? i.script : '',
+    everyMinutes: num(i.check_every_minutes, 1),
+    expiresDays: num(i.expires_in_days, 30),
+    market: created.watcher?.market ?? (typeof i.market === 'string' && i.market !== 'auto' ? i.market : ''),
+    now: dryNow === null || dryNow === undefined ? null : String(dryNow),
+    error: state === 'failed' ? (a.error ?? created.error ?? 'The watcher was not created.') : undefined,
+    approval: a.approval,
+  };
 }
 
 /**
@@ -337,9 +389,16 @@ export function buildAnswer(input: {
   let chart: ChartSpec | null = null;
   let tokensSent = 0;
   let kiteExpired = false;
+  let watcher: WatcherCard | null = null;
   for (const raw of input.tools) {
     const a = normalizeActivity(raw);
+    if (toolBase(a.toolName) === 'create_watcher') watcher = watcherCard(a, sources);
     if (a.state === 'denied') continue;
+    if (a.state === 'awaiting') {
+      // The card itself shows the watcher: the plan says what happens next, no source yet.
+      steps.push({ callId: a.callId, label: 'Show you the watcher before it starts', detail: 'nothing runs until you say Start', status: 'ok' });
+      continue;
+    }
     const source = isInternalTool(a.toolName) ? null : sourceFor(a, sources.length + 1, fallbackAt);
     if (source) sources.push(source);
     steps.push(stepFor(a, source));
@@ -370,6 +429,7 @@ export function buildAnswer(input: {
   else status = 'planning';
   return {
     status,
+    watcher,
     text,
     steps,
     sources,

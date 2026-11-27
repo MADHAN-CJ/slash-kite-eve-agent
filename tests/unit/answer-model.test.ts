@@ -45,7 +45,7 @@ describe('the answer model', () => {
       [2, 'Quote', 'RELIANCE', 1, 88],
     ]);
     expect(m.steps.map((s) => s.label)).toEqual(['Get the last 60 daily candles for RELIANCE', 'Compare them with today’s price']);
-    expect(m.steps[0].detail).toBe('python · RELIANCE 1D · 60 rows');
+    expect(m.steps[0].detail).toBe('python · RELIANCE 1D · 60 candles');
     expect(m.rows).toBe(61);
     expect(m.ms).toBe(230);
     expect(m.asOf).toBe('14:32:05');

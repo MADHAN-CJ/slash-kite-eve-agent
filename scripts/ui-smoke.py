@@ -220,7 +220,7 @@ with sync_playwright() as p:
     check("an armed watcher shows as watching", status.text_content() == "watching", status.text_content())
     listed = api("GET", "/api/watches", token)["watches"]
     mine = [w for w in listed if w["id"] == WATCH_ID][0]
-    check("watches API never returns the script", "script" not in mine and mine["checkEveryMinutes"] == 5 and len(mine["recentAlerts"]) == 1, sorted(mine.keys()))
+    check("watches API returns the summary (script included since v2)", "userId" not in mine and mine["checkEveryMinutes"] == 5 and len(mine["recentAlerts"]) == 1, sorted(mine.keys()))
     card.get_by_role("button", name="Pause").click()
     page.wait_for_function(f"document.querySelector('[data-watch-id=\"{WATCH_ID}\"] [data-testid=watch-status]')?.textContent === 'paused'", timeout=10_000)
     check("pause → paused", True)

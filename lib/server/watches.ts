@@ -23,6 +23,8 @@ export interface WatchAlert {
   at: string;
   value: string | null;
   detail: string | null;
+  /** The alert email went out. */
+  emailed?: boolean;
 }
 
 export interface WatchSummary {
@@ -43,11 +45,20 @@ export interface WatchSummary {
   expiresAt: string;
   createdAt: string;
   recentAlerts: WatchAlert[];
+  /** The condition was true at the last check (the v2 "True now" state). */
+  lastMet: boolean | null;
+  /** The script the watcher runs — the user's own, shown behind "See the script" (v2). */
+  script: string;
+  /** The chat that created it, when it was created in this app (eve.watcher_links). */
+  threadId: string | null;
+  threadTitle: string | null;
+  /** Last change of the row (when a cancelled watcher was cancelled). */
+  updatedAt: string;
 }
 
 const RECENT_ALERTS = 3;
 
-export function summarize(row: WatcherRow, recentAlerts: WatchAlert[]): WatchSummary {
+export function summarize(row: WatcherRow, recentAlerts: WatchAlert[], link?: { threadId: string; title: string | null } | null): WatchSummary {
   return {
     id: row.id,
     symbol: row.symbol,
@@ -66,6 +77,11 @@ export function summarize(row: WatcherRow, recentAlerts: WatchAlert[]): WatchSum
     expiresAt: row.expiresAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
     recentAlerts,
+    lastMet: row.lastMet,
+    script: row.script,
+    threadId: link?.threadId ?? null,
+    threadTitle: link?.title ?? null,
+    updatedAt: row.updatedAt.toISOString(),
   };
 }
 
@@ -90,30 +106,40 @@ export function transition(action: WatchAction, status: WatchStatus): WatchPatch
   return null;
 }
 
-async function recentAlertsFor(ids: string[]): Promise<Map<string, WatchAlert[]>> {
+async function recentAlertsFor(ids: string[], limit = RECENT_ALERTS): Promise<Map<string, WatchAlert[]>> {
   const byWatcher = new Map<string, WatchAlert[]>();
   if (ids.length === 0) return byWatcher;
   const idList = sql.join(
     ids.map((id) => sql`${id}`),
     sql`, `,
   );
-  const res = await db().execute<{ watcher_id: string; fired_at: Date; value: string | null; detail: string | null }>(sql`
-    SELECT watcher_id, fired_at, value, detail FROM (
+  const res = await db().execute<{ watcher_id: string; fired_at: Date; value: string | null; detail: string | null; emailed: boolean }>(sql`
+    SELECT watcher_id, fired_at, value, detail, emailed FROM (
       SELECT f.*, row_number() OVER (PARTITION BY watcher_id ORDER BY fired_at DESC) AS rn
       FROM watcher_fires f WHERE watcher_id IN (${idList})) t
-    WHERE rn <= ${RECENT_ALERTS} ORDER BY fired_at DESC`);
+    WHERE rn <= ${limit} ORDER BY fired_at DESC`);
   for (const f of res.rows) {
     const list = byWatcher.get(f.watcher_id) ?? [];
-    list.push({ at: new Date(f.fired_at).toISOString(), value: f.value, detail: f.detail });
+    list.push({ at: new Date(f.fired_at).toISOString(), value: f.value, detail: f.detail, emailed: f.emailed });
     byWatcher.set(f.watcher_id, list);
   }
   return byWatcher;
 }
 
-export async function listWatches(userId: string): Promise<WatchSummary[]> {
+/** The chat each watcher came from, for the ones created in this app. */
+async function linksFor(userId: string): Promise<Map<string, { threadId: string; title: string | null }>> {
+  const res = await db().execute<{ watcher_id: string; thread_id: string; title: string | null }>(sql`
+    SELECT l.watcher_id, l.thread_id, t.title FROM eve.watcher_links l
+    JOIN eve.threads t ON t.id = l.thread_id
+    WHERE l.user_id = ${userId} AND t.deleted_at IS NULL`);
+  return new Map(res.rows.map((r) => [r.watcher_id, { threadId: r.thread_id, title: r.title }]));
+}
+
+/** `alerts` = how many of each watcher's latest alerts to include (the v2 screen shows the whole log). */
+export async function listWatches(userId: string, alerts = RECENT_ALERTS): Promise<WatchSummary[]> {
   const rows = await db().select().from(watchers).where(eq(watchers.userId, userId)).orderBy(desc(watchers.createdAt));
-  const alerts = await recentAlertsFor(rows.map((r) => r.id));
-  return rows.map((r) => summarize(r, alerts.get(r.id) ?? []));
+  const [fires, links] = await Promise.all([recentAlertsFor(rows.map((r) => r.id), Math.max(1, Math.min(alerts, 100))), linksFor(userId)]);
+  return rows.map((r) => summarize(r, fires.get(r.id) ?? [], links.get(r.id)));
 }
 
 export async function mutateWatch(userId: string, id: string, action: WatchAction): Promise<WatchSummary> {
@@ -129,6 +155,6 @@ export async function mutateWatch(userId: string, id: string, action: WatchActio
     .where(and(owned, eq(watchers.status, row.status)))
     .returning();
   if (!updated) throw new HttpError(409, 'The watcher changed just now. Reload and try again.');
-  const alerts = await recentAlertsFor([id]);
-  return summarize(updated, alerts.get(id) ?? []);
+  const [fires, links] = await Promise.all([recentAlertsFor([id], 100), linksFor(userId)]);
+  return summarize(updated, fires.get(id) ?? [], links.get(id));
 }

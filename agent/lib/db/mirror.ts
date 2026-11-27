@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { db } from './client';
-import { messages, sessionContext, threads } from './schema';
+import { messages, sessionContext, threads, watcherLinks } from './schema';
 import { costForUsage } from './pricing';
 import type { MessagePart, Usage } from './types';
 
@@ -287,10 +287,56 @@ export async function onActionResult(
               ? 'Declined by user'
               : (data.error?.message ?? 'Tool call failed'),
         };
+  if (data.status === 'completed' && toolName.endsWith('create_watcher')) {
+    await linkWatcher(sessionId, createdWatcherId(data.result.output));
+  }
   const buf = buffers.get(bufferKey(sessionId, data.turnId));
   if (!buf) return appendDurable(sessionId, data.sequence, { parts: [part] });
   buf.parts.push(part);
   await flushAssistant(buf);
+}
+
+/**
+ * The id in a successful `create_watcher` result. MCP results arrive either
+ * structured (`{ structuredContent: { watcher: { id } } }` or the object
+ * itself) or as a JSON text block; read all three defensively.
+ */
+export function createdWatcherId(output: unknown): string | null {
+  const fromObj = (o: unknown): string | null => {
+    if (!o || typeof o !== 'object') return null;
+    const r = o as { created?: unknown; watcher?: { id?: unknown }; structuredContent?: unknown; content?: unknown };
+    if (r.structuredContent) return fromObj(r.structuredContent);
+    if (r.created === true && r.watcher && typeof r.watcher.id === 'string') return r.watcher.id;
+    if (Array.isArray(r.content)) {
+      for (const c of r.content) {
+        const text = c && typeof c === 'object' ? (c as { text?: unknown }).text : undefined;
+        if (typeof text !== 'string') continue;
+        try {
+          const id = fromObj(JSON.parse(text));
+          if (id) return id;
+        } catch {
+          // not JSON
+        }
+      }
+    }
+    return null;
+  };
+  if (typeof output === 'string') {
+    try {
+      return fromObj(JSON.parse(output));
+    } catch {
+      return null;
+    }
+  }
+  return fromObj(output);
+}
+
+/** Remember which chat a watcher came from (plan-v2 D9). Idempotent. */
+async function linkWatcher(sessionId: string, watcherId: string | null): Promise<void> {
+  if (!watcherId) return;
+  const row = await db().query.threads.findFirst({ columns: { id: true, userId: true }, where: eq(threads.eveSessionId, sessionId) });
+  if (!row?.userId) return;
+  await db().insert(watcherLinks).values({ watcherId, userId: row.userId, threadId: row.id }).onConflictDoNothing();
 }
 
 export async function onMessageCompleted(

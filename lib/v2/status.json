@@ -17,5 +17,21 @@
   "morning:ended": "wired",
   "morning:kite": "wired",
   "morning:failed": "wired",
-  "morning:back": "wired"
+  "morning:back": "wired",
+  "watchers:empty": "wired",
+  "watchers:new": "wired",
+  "watchers:active": "wired",
+  "watchers:finished": "wired",
+  "watchers:kite": "wired",
+  "watchers:email": "lab",
+  "watchers:remind": "lab",
+  "trade:watcher": "wired",
+  "trade:reliance-watcher": "wired",
+  "trade:invalid-order": "wired",
+  "trade:answer": "wired",
+  "trade:email": "wired",
+  "trade:fno": "wired",
+  "trade:window": "wired",
+  "trade:closed": "wired",
+  "trade:blocked": "wired"
 }

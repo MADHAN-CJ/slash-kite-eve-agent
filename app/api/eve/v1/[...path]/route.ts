@@ -90,8 +90,10 @@ export async function POST(req: Request, { params }: Params) {
           continuationToken: payload.continuationToken ?? null,
         })
         .onConflictDoNothing({ target: threads.eveSessionId });
-      // The browser never needs the continuation token — the proxy injects it.
-      return NextResponse.json({ ...payload, continuationToken: undefined }, { status: upstream.status });
+      // The browser never sees the real continuation token — the proxy injects the stored one on every
+      // follow-up. It gets a placeholder instead: eve's client refuses an approval-only send (the
+      // watcher confirm card's Start) unless it holds SOME token, as resumed threads already do.
+      return NextResponse.json({ ...payload, continuationToken: 'proxy-managed' }, { status: upstream.status });
     }
 
     // --- POST session/<id> → follow-up message ---

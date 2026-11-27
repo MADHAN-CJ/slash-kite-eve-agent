@@ -103,7 +103,29 @@ export const messages = eve.table(
   ],
 );
 
+/**
+ * Which chat a watcher came from (plan-v2 D9 — additive). The watcher itself
+ * lives in the MCP's `public.watchers`; this row is written by the persist
+ * hook when a `create_watcher` call made in THIS app succeeds, so the
+ * Watchers screen can offer "Open in chat". Watchers created elsewhere
+ * (Claude, ChatGPT) simply have no row.
+ */
+export const watcherLinks = eve.table(
+  'watcher_links',
+  {
+    /** → public.watchers.id (no FK: the MCP owns and may delete that table's rows). */
+    watcherId: text('watcher_id').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    threadId: uuid('thread_id')
+      .notNull()
+      .references(() => threads.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('watcher_links_user_idx').on(t.userId)],
+);
+
 export type McpGrantRow = typeof mcpGrants.$inferSelect;
+export type WatcherLinkRow = typeof watcherLinks.$inferSelect;
 export type SessionContextRow = typeof sessionContext.$inferSelect;
 export type ThreadRow = typeof threads.$inferSelect;
 export type MessageRow = typeof messages.$inferSelect;

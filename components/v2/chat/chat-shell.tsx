@@ -292,6 +292,8 @@ export interface ChatShellProps {
   readonly watchers?: ReactNode;
   /** Cards that replace or sit above the docked composer (limits). */
   readonly dockNotice?: ReactNode;
+  /** Above the docked box (the Watch this panel, run.js `#wq5` before `#form1`). */
+  readonly dockAbove?: ReactNode;
   readonly dockRef?: Ref<ComposerHandle>;
   readonly heroRef?: Ref<ComposerHandle>;
   readonly pulseKey?: number;
@@ -402,11 +404,23 @@ export function ChatShell(p: ChatShellProps) {
     const follow = () => {
       if (stuckRef.current) el.scrollTop = el.scrollHeight;
     };
-    const mo = new MutationObserver(follow);
+    // app.js scrolls on a new message and while an answer streams — not when a card or panel opens later.
+    const mo = new MutationObserver((records) => {
+      const newMessage = records.some((r) => r.target === list && r.addedNodes.length > 0);
+      if (newMessage || busyRef.current) follow();
+    });
     mo.observe(list, { childList: true, subtree: true, characterData: true });
     follow();
     return () => mo.disconnect();
   }, []);
+  // A run that just finished lands at its end too (app.js reply() → toBottom()), after its tabs and sources render.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only the busy → idle edge matters
+  useEffect(() => {
+    if (p.busy) return;
+    const el = scroller.current;
+    if (el && stuckRef.current) requestAnimationFrame(() => (el.scrollTop = el.scrollHeight));
+  }, [p.busy]);
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new conversation starts at its end
   useEffect(() => {
     const el = scroller.current;
@@ -692,6 +706,7 @@ export function ChatShell(p: ChatShellProps) {
                 >
                   <Icon name="down" />
                 </button>
+                {p.dockAbove}
                 <Composer
                   busy={p.busy}
                   dataLabel={dataLabel}

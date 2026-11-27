@@ -26,4 +26,8 @@ export default defineMcpClientConnection({
     getToken: async () => ({ token: await resolveMcpToken(ctx) }),
   }),
   tools: { allow: [...KITE_TOOLS] },
+  // Plan-v2 D8: in THIS app a watcher starts only after the user taps "Start
+  // watching" on the confirm card, so create_watcher parks for approval. The
+  // same MCP used directly from Claude / ChatGPT still creates at once.
+  approval: ({ toolName }) => (toolName.endsWith('create_watcher') ? 'user-approval' : 'not-applicable'),
 });

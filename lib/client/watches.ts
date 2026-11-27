@@ -6,8 +6,8 @@ export type { WatchAction, WatchSummary };
 
 /** Client for the watcher routes. Watchers are created in chat; here they are listed and managed. */
 
-export const listWatches = async (): Promise<WatchSummary[]> =>
-  (await handle<{ watches: WatchSummary[] }>(await fetch('/api/watches', { headers: authHeaders(), cache: 'no-store' })))
+export const listWatches = async (alerts?: number): Promise<WatchSummary[]> =>
+  (await handle<{ watches: WatchSummary[] }>(await fetch(`/api/watches${alerts ? `?alerts=${alerts}` : ''}`, { headers: authHeaders(), cache: 'no-store' })))
     .watches;
 
 export const mutateWatch = async (id: string, action: WatchAction): Promise<WatchSummary> =>
