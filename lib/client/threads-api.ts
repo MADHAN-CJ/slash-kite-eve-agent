@@ -28,6 +28,10 @@ export interface ApiMessage {
 export interface ThreadDetail extends ThreadSummary {
   streamIndex: number;
   messages: ApiMessage[];
+  /** V10: `long` = soft note, `full` = the box is replaced (see lib/server/limits.ts). */
+  limit: 'long' | 'full' | null;
+  /** V10: what a new chat carries over when this one is full. */
+  carry: string;
 }
 
 async function failure(res: Response): Promise<Error> {

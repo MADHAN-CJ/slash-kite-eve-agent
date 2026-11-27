@@ -6,7 +6,7 @@ import '../../lab.css';
 
 export const dynamic = 'force-dynamic';
 
-const BUILT = new Set(['empty', 'draft', 'run', 'answer', 'stopped', 'timeout', 'kite-expired', 'no-market-data']);
+const BUILT = new Set(['empty', 'draft', 'run', 'answer', 'stopped', 'timeout', 'kite-expired', 'no-market-data', 'low', 'out', 'long', 'full']);
 
 export default async function AskLabPage({ searchParams }: { searchParams: Promise<{ s?: string }> }) {
   assertLab();

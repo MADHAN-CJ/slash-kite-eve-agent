@@ -1,6 +1,8 @@
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { db } from '@/agent/lib/db/client';
-import { messages, threads } from '@/agent/lib/db/schema';
+import { watchers } from '@/agent/lib/db/mcp-schema';
+import { messages, threads, watcherLinks } from '@/agent/lib/db/schema';
+import { carryOver, type ChatLimit, chatLimit } from './limits';
 import type { Cost, MessagePart, Role, Usage } from '@/agent/lib/db/types';
 import { HttpError } from './auth';
 
@@ -36,6 +38,10 @@ export interface ThreadDetail extends ThreadSummary {
    */
   streamIndex: number;
   messages: ApiMessage[];
+  /** V10: `long` = soft note, `full` = the box is replaced and the proxy refuses more turns. */
+  limit: ChatLimit;
+  /** V10: what a new chat carries over when this one is full (shown, not sent). */
+  carry: string;
 }
 
 type ThreadRowShape = typeof threads.$inferSelect;
@@ -129,11 +135,36 @@ export async function getThread(userId: string, threadId: string): Promise<Threa
     cost: m.cost ?? null,
     createdAt: m.createdAt.toISOString(),
   }));
+  const stitched = stitchOrphanResults(shaped);
+  const limit = chatLimit(stitched);
   return {
     ...summarize(thread),
     streamIndex: thread.streamIndex,
-    messages: stitchOrphanResults(shaped),
+    messages: stitched,
+    limit,
+    carry: limit === 'full' ? carryOver(thread.title, stitched, await watcherLabelsOf(threadId)) : '',
   };
+}
+
+/** Labels of the watchers started from this chat (eve.watcher_links → public.watchers). */
+async function watcherLabelsOf(threadId: string): Promise<string[]> {
+  const links = await db().select({ id: watcherLinks.watcherId }).from(watcherLinks).where(eq(watcherLinks.threadId, threadId));
+  if (!links.length) return [];
+  const rows = await db()
+    .select({ label: watchers.label })
+    .from(watchers)
+    .where(inArray(watchers.id, links.map((l) => l.id)));
+  return rows.map((r) => r.label).filter(Boolean);
+}
+
+/** The limit of a thread for the proxy's gate (same rule as getThread). */
+export async function threadLimit(threadId: string): Promise<ChatLimit> {
+  const rows = await db()
+    .select({ role: messages.role, content: messages.content, usage: messages.usage })
+    .from(messages)
+    .where(eq(messages.threadId, threadId))
+    .orderBy(messages.turnSequence, messages.createdAt);
+  return chatLimit(rows.map((r) => ({ role: r.role, content: r.content, usage: r.usage ?? null })));
 }
 
 export async function deleteThread(userId: string, threadId: string): Promise<void> {

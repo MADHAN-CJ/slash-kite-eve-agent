@@ -1,22 +1,29 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { type BrokerStatus, consumeKiteReturn, getBrokerStatus, SessionExpiredError } from '@/lib/client/broker';
-import { clearSession, getUser, isLoggedIn, logout } from '@/lib/client/settings';
+import { type BrokerStatus, consumeKiteReturn, disconnectBroker, getBrokerStatus, SessionExpiredError } from '@/lib/client/broker';
+import { authHeaders, clearSession, getUser, isLoggedIn, logout } from '@/lib/client/settings';
 import { deleteThread, getThread, listThreads, renameThread, type ThreadDetail, type ThreadSummary } from '@/lib/client/threads-api';
 import { listWatches, mutateWatch, type WatchSummary } from '@/lib/client/watches';
 import { toW8, type W8 } from '@/lib/v2/watcher-view';
 import { WatchersScreen } from './watchers-screen';
 import { untilSix } from '@/lib/v2/kite-login';
-import type { ShellAuth, ShellGate, ShellSession } from './chat-shell';
+import type { ShellAuth, ShellGate, ShellLimits, ShellSession } from './chat-shell';
 import { Conversation } from './conversation';
 import { KiteDialog } from './kite-dialog';
 import { toast } from './toast';
 import { fetchUsage, type Usage } from './usage-api';
 import { useKiteConnect } from './use-kite-connect';
+import { AccountPanel } from './account-panel';
+import { accountKite, accountUsage } from '@/lib/v2/account';
 import { TradeDialog } from './trade-dialog';
 import type { TradeContext } from '@/lib/v2/trade';
 import { prefillFromParams } from '@/lib/client/kite-publisher';
+import { type OnboardingState, type TourMarket, tourStarters } from '@/lib/v2/tour';
+import { Tour } from '@/components/v2/tour/tour';
+import { TourHelp } from '@/components/v2/tour/tour-help';
+import { TourQuestion } from '@/components/v2/tour/tour-demo';
+import { useTourLaunch } from '@/components/v2/tour/use-tour-launch';
 
 /**
  * The /chat page: the v2 chat app on real data — threads, the eve session,
@@ -31,6 +38,18 @@ type View = { kind: 'draft'; n: number } | { kind: 'thread'; id: string } | { ki
 const STRIP_MS = 6000;
 const WATCH_REFRESH_MS = 15_000;
 const GATE_TEXT = 'Connect Kite to start asking. Read-only.';
+const HOMEPAGE_QUESTION = 'slash-home:queued-question';
+
+function readDraft(key: string) {
+  try { return sessionStorage.getItem(key) ?? ''; } catch { return ''; }
+}
+
+function saveDraft(key: string, value: string) {
+  try {
+    if (value) sessionStorage.setItem(key, value);
+    else sessionStorage.removeItem(key);
+  } catch {}
+}
 
 function authOf(b: BrokerStatus | null): ShellAuth {
   if (!b) return 'kite';
@@ -39,7 +58,7 @@ function authOf(b: BrokerStatus | null): ShellAuth {
   return 'delayed';
 }
 
-export function ChatApp() {
+export function ChatApp({ connectorUrl }: { readonly connectorUrl: string }) {
   const [ready, setReady] = useState(false);
   useEffect(() => {
     if (!isLoggedIn()) {
@@ -49,25 +68,76 @@ export function ChatApp() {
     setReady(true);
   }, []);
   if (!ready) return null;
-  return <LoggedInChat />;
+  return <LoggedInChat connectorUrl={connectorUrl} />;
 }
 
-function LoggedInChat() {
+function LoggedInChat({ connectorUrl }: { readonly connectorUrl: string }) {
   const loginReturn = useRef(window.location.pathname + window.location.search);
   const [view, setView] = useState<View>({ kind: 'draft', n: 0 });
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [detail, setDetail] = useState<ThreadDetail | null>(null);
   const [broker, setBroker] = useState<BrokerStatus | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
+  /** V10: the carried-over summary shown above the next new chat's box. */
+  const [carry, setCarry] = useState<string | null>(null);
   const [adopted, setAdopted] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [paused, setPaused] = useState(0);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [accountNow, setAccountNow] = useState(() => Date.now());
+  const [signingOut, setSigningOut] = useState(false);
+  const brokerRequest = useRef(0);
   const [strip, setStrip] = useState<{ text: string; sub: string } | null>(null);
   const [queued, setQueued] = useState<{ text: string; n: number } | null>(null);
   const [reconnectNote, setReconnectNote] = useState<{ at: string; watchers: number; threadId: string | null } | null>(null);
   const [watches, setWatches] = useState<WatchSummary[] | null>(null);
   const [prefill, setPrefill] = useState<{ text: string; n: number } | null>(null);
   const clearPrefill = useCallback(() => setPrefill(null), []);
+  const tour = useTourLaunch();
+  const [tourReady, setTourReady] = useState(false);
+  const [tourMarkets, setTourMarkets] = useState<TourMarket[]>([]);
+  const [tourQuestion, setTourQuestion] = useState(() => readDraft(HOMEPAGE_QUESTION));
+  const [tourError, setTourError] = useState('');
+  const [tourSaving, setTourSaving] = useState(false);
+  const [tourGate, setTourGate] = useState(false);
+  const tourSavingRef = useRef(false);
+  const questionKey = `slash-tour:queued-question:${getUser()?.id ?? ''}`;
+  const [savedQuestion, setSavedQuestion] = useState(() => readDraft(questionKey));
+
+  const saveQuestion = (question: string) => {
+    setSavedQuestion(question);
+    saveDraft(questionKey, question);
+  };
+
+  useEffect(() => {
+    const controller = new AbortController();
+    async function load() {
+      let pending = false;
+      try {
+        const response = await fetch('/api/onboarding', { headers: authHeaders(), signal: controller.signal });
+        if (response.ok) {
+          const state = await response.json() as OnboardingState;
+          if (controller.signal.aborted) return;
+          setTourMarkets(state.markets);
+          pending = state.pending;
+        }
+      } catch {
+        // Chat still opens if onboarding is temporarily unavailable.
+      }
+      if (controller.signal.aborted) return;
+      if (pending) tour.setShow(true);
+      else {
+        const landingQuestion = readDraft(HOMEPAGE_QUESTION);
+        if (landingQuestion) setPrefill({ text: landingQuestion, n: Date.now() });
+        saveDraft(HOMEPAGE_QUESTION, '');
+        setTourQuestion('');
+      }
+      setTourReady(true);
+    }
+    void load();
+    return () => controller.abort();
+  }, [tour.setShow]);
+
   const [trade, setTrade] = useState<{ context: TradeContext; id: number } | null>(null);
   const openTrade = useCallback((context: TradeContext) => setTrade({ context, id: Date.now() }), []);
 
@@ -89,6 +159,7 @@ function LoggedInChat() {
   }, [openTrade]);
 
   const signOut = useCallback(() => {
+    setSigningOut(true);
     void logout().finally(() => window.location.replace('/'));
   }, []);
   const onSessionLost = useCallback((e: unknown) => {
@@ -109,8 +180,10 @@ function LoggedInChat() {
     }
   }, [onSessionLost]);
   const refreshBroker = useCallback(async () => {
+    const request = ++brokerRequest.current;
     try {
-      setBroker(await getBrokerStatus());
+      const status = await getBrokerStatus();
+      if (request === brokerRequest.current) setBroker(status);
     } catch (e) {
       onSessionLost(e);
     }
@@ -142,9 +215,9 @@ function LoggedInChat() {
   const auth = authOf(broker);
   const connected = auth === 'kite';
   useEffect(() => {
-    if (auth === 'ended') void refreshPaused();
+    if (auth === 'ended' || broker?.status === 'disconnected') void refreshPaused();
     else setPaused(0);
-  }, [auth, refreshPaused]);
+  }, [auth, broker?.status, refreshPaused]);
 
   // The Watchers screen: the whole alert log, refreshed while it is open.
   const refreshWatches = useCallback(async () => {
@@ -187,7 +260,9 @@ function LoggedInChat() {
   viewRef.current = view;
   const kite = useKiteConnect({
     onConnected: (st) => {
+      brokerRequest.current++;
       setBroker(st);
+      setLastFailed(false);
       setNotice(null);
       const u = untilSix(st.expiresAt ? new Date(st.expiresAt) : null);
       setStrip({ text: 'Kite connected until 6:00 AM', sub: `${u.txt} left · read-only` });
@@ -200,26 +275,128 @@ function LoggedInChat() {
     },
     onFailed: (reason) => setNotice(reason),
   });
+  const sendSavedQuestion = useCallback((question: string) => {
+    setAdopted(null);
+    setView({ kind: 'draft', n: Date.now() });
+    setQueued({ text: question, n: Date.now() });
+    setPrefill(null);
+  }, []);
   const onDialogDone = useCallback(() => {
     kite.done();
-    if (kite.pendingQuestion) {
-      setQueued({ text: kite.pendingQuestion, n: Date.now() });
+    const question = kite.pendingQuestion || savedQuestion;
+    if (question) {
+      setSentRestoredQuestion(question);
+      sendSavedQuestion(question);
       kite.clearPending();
     }
-  }, [kite]);
+  }, [kite, savedQuestion, sendSavedQuestion]);
+  const [sentRestoredQuestion, setSentRestoredQuestion] = useState('');
+  useEffect(() => {
+    if (!tourReady || tour.show || broker?.status !== 'active' || kite.open ||
+        !savedQuestion || sentRestoredQuestion === savedQuestion) return;
+    setSentRestoredQuestion(savedQuestion);
+    sendSavedQuestion(savedQuestion);
+  }, [tourReady, tour.show, broker?.status, kite.open, savedQuestion, sentRestoredQuestion, sendSavedQuestion]);
+
+  const clearQueued = () => {
+    if (queued?.text === savedQuestion) saveQuestion('');
+    setSentRestoredQuestion('');
+    setQueued(null);
+  };
+
+  const openKite = (question?: string) => kite.openDialog(question ?? (savedQuestion || kite.pendingQuestion));
+  const gateTap = (question?: string) => {
+    if (!tourGate && !savedQuestion) {
+      openKite(question);
+      return;
+    }
+    if (question) {
+      saveQuestion(question);
+      toast('Saved. It runs once Kite connects.', 3600);
+    }
+    tour.pulseGate();
+  };
+  const finishTour = async (markets: TourMarket[], connect: boolean) => {
+    if (tourSavingRef.current) return;
+    tourSavingRef.current = true;
+    setTourSaving(true);
+    setTourError('');
+    try {
+      const response = await fetch('/api/onboarding', {
+        method: 'PUT',
+        headers: { ...authHeaders(), 'content-type': 'application/json' },
+        body: JSON.stringify({ markets }),
+      });
+      if (response.status === 401) throw new SessionExpiredError();
+      if (!response.ok) throw new Error();
+      setTourMarkets(markets);
+      if (tourQuestion) saveQuestion(tourQuestion);
+      saveDraft(HOMEPAGE_QUESTION, '');
+      setTourGate(true);
+      if (connect && broker?.status !== 'active') openKite(tourQuestion || undefined);
+      tour.finish(!connect);
+    } catch (error) {
+      if (!onSessionLost(error)) setTourError('Could not save your choices. Try again.');
+    } finally {
+      tourSavingRef.current = false;
+      setTourSaving(false);
+    }
+  };
+
   const [lastFailed, setLastFailed] = useState(false);
   const closeDialog = useCallback(() => {
     setLastFailed(kite.state.mode === 'fail' || kite.state.mode === 'timeout' || kite.state.mode === 'blocked');
     kite.close();
   }, [kite]);
 
+  useEffect(() => {
+    if (!accountOpen) return;
+    const timer = window.setInterval(() => setAccountNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [accountOpen]);
+
+  useEffect(() => {
+    if (broker?.status !== 'active' || !broker.expiresAt) return;
+    const expiresAt = Date.parse(broker.expiresAt);
+    if (!Number.isFinite(expiresAt) || expiresAt - Date.now() > 2_147_483_647) return;
+    const timer = window.setTimeout(() => {
+      // Close the composer at the known expiry even if the status request fails.
+      setBroker((current) => current === broker ? { ...current, status: 'token_expired' } : current);
+      void refreshBroker();
+    }, Math.max(0, expiresAt - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [broker, refreshBroker]);
+
+  const disconnectKite = async () => {
+    brokerRequest.current++;
+    try {
+      const status = await disconnectBroker();
+      brokerRequest.current++;
+      setBroker(status);
+      setLastFailed(false);
+      setNotice(null);
+      setStrip(null);
+      setReconnectNote(null);
+      if (view.kind === 'watchers') void refreshWatches();
+      toast('Kite disconnected. Chat and watchers are paused.', 3200);
+    } catch (error) {
+      if (!onSessionLost(error)) {
+        void refreshBroker();
+        throw error;
+      }
+    }
+  };
+
+  const expiredEarly = broker?.status === 'token_expired' && accountKite(broker, paused, Date.now(), false).expired;
   const gate: ShellGate | undefined = connected
     ? undefined
+    : broker?.status === 'disconnected'
+      ? { text: 'Kite is disconnected. Connect to ask.', action: 'Connect Kite', onAction: () => openKite() }
     : auth === 'ended'
       ? lastFailed
-        ? { text: 'Kite login didn’t finish. Nothing changed.', action: 'Try again', onAction: () => kite.openDialog() }
-        : { text: notice ?? 'Kite session ended at 6:00. Reconnect to ask.', action: 'Reconnect Kite', onAction: () => kite.openDialog() }
-      : { text: notice ?? GATE_TEXT, action: 'Connect Kite', onAction: () => kite.openDialog() };
+        ? { text: 'Kite login didn’t finish. Nothing changed.', action: 'Try again', onAction: () => openKite() }
+        : { text: notice ?? (expiredEarly ? 'Kite session expired. Reconnect to ask.' : 'Kite session ended at 6:00. Reconnect to ask.'), action: 'Reconnect Kite', onAction: () => openKite() }
+      : { text: notice ?? GATE_TEXT, action: 'Connect Kite', onAction: () => openKite() };
 
   const sessions: ShellSession[] = threads.map((t) => ({ id: t.id, title: t.title ?? 'New chat', updatedAt: t.updatedAt }));
   const adoptedThread = adopted ? threads.find((t) => t.eveSessionId === adopted) : undefined;
@@ -284,16 +461,43 @@ function LoggedInChat() {
     currentId,
     auth,
     kiteUntil: broker?.expiresAt ? new Date(broker.expiresAt) : null,
-    statusLine: auth === 'ended' ? (<><i />Kite ended at 6:00 AM</>) : undefined,
-    gate: gate && auth === 'ended' && view.kind === 'watchers' ? { ...gate, text: 'Kite session ended at 6:00. Your watchers are paused until you reconnect.' } : gate,
+    statusLine: broker?.status === 'disconnected' ? (<><i />Kite disconnected</>) : auth === 'ended'
+      ? (<><i />{expiredEarly ? 'Kite session expired' : 'Kite ended at 6:00 AM'}</>)
+      : undefined,
+    gate: gate && auth === 'ended' && view.kind === 'watchers' ? { ...gate, text: expiredEarly ? 'Kite session expired. Your watchers are paused until you reconnect.' : 'Kite session ended at 6:00. Your watchers are paused until you reconnect.' } : gate,
     email: getUser()?.email ?? undefined,
     onOpenWatchers: () => setView({ kind: 'watchers' }),
     accountInitial: (getUser()?.email ?? 'Y').slice(0, 1).toUpperCase(),
     creditsLeft: usage?.leftPct ?? 100,
+    limits: {
+      credits: usage ? (usage.monthUsd >= usage.allowanceUsd || usage.leftPct === 0 ? 'out' : usage.leftPct <= usage.lowPct ? 'low' : null) : null,
+      chat: view.kind === 'thread' ? (detail?.limit ?? null) : null,
+      resetsOn: usage?.resetsOn,
+      carry: detail?.carry ?? '',
+      onPlans: () => {
+        setAccountNow(Date.now());
+        setAccountOpen(true);
+        void refreshUsage();
+      },
+      onWait: () => toast('Fine. Your chats stay open to read.', 3200),
+      onNewChat: () => {
+        setAdopted(null);
+        setView({ kind: 'draft', n: Date.now() });
+      },
+      onCarry: () => {
+        setCarry(detail?.carry || null);
+        setAdopted(null);
+        setView({ kind: 'draft', n: Date.now() });
+      },
+    } satisfies ShellLimits,
+    carry: carry && view.kind === 'draft' ? { text: carry, onDismiss: () => setCarry(null) } : null,
     composerGate: connected ? undefined : auth === 'ended' ? ('off' as const) : ('readonly' as const),
     composerPlaceholder: connected ? undefined : auth === 'ended' ? 'Reconnect Kite to ask' : 'Connect Kite to start asking',
-    onGateTap: (q?: string) => kite.openDialog(q ?? kite.pendingQuestion),
-    waitingQuestion: kite.pendingQuestion,
+    onGateTap: gateTap,
+    gatePulseKey: tour.pulse,
+    gateQuestion: savedQuestion ? <TourQuestion label="saved for later" question={savedQuestion} sample /> : undefined,
+    waitingQuestion: savedQuestion || kite.pendingQuestion,
+    starters: tourGate || tourMarkets.length ? tourStarters(tourMarkets) : undefined,
     connectedStrip: strip,
     pausedWatchers: paused,
     view: view.kind === 'watchers' ? ('watchers' as const) : ('chat' as const),
@@ -319,9 +523,13 @@ function LoggedInChat() {
     onRenameChat: (id: string, title: string) => void rename(id, title),
     onWatchers: () => setView({ kind: 'watchers' }),
     onAccount: () => {
-      if (window.confirm(`Sign out of /markets${getUser()?.email ? ` (${getUser()?.email})` : ''}? Your chats and your Zerodha connection stay with your account.`)) signOut();
+      setAccountNow(Date.now());
+      setAccountOpen(true);
+      void refreshBroker();
+      void refreshUsage();
+      if (broker?.status === 'token_expired' || broker?.status === 'disconnected') void refreshPaused();
     },
-    onConnectKite: () => kite.openDialog(),
+    onConnectKite: () => openKite(),
     onTrade: openTrade,
   };
 
@@ -329,9 +537,33 @@ function LoggedInChat() {
     void refreshThreads();
     void refreshBroker();
     void refreshUsage();
+    // The chat's long/full state is judged server-side from the turn just stored.
+    const v = viewRef.current;
+    if (v.kind === 'thread') {
+      getThread(v.id)
+        .then((d) => setDetail((prev) => (prev && prev.id === d.id ? { ...prev, limit: d.limit, carry: d.carry } : prev)))
+        .catch(() => {});
+    }
   };
 
   const dialog = (<>
+    {accountOpen ? (
+      <AccountPanel
+        open={!kite.open}
+        email={getUser()?.email ?? ''}
+        kite={accountKite(broker, paused, accountNow, lastFailed)}
+        usage={accountUsage(usage)}
+        connectorUrl={connectorUrl}
+        connectorNote="Your Kite connection is shared."
+        chatGpt={{ title: 'In review', description: '' }}
+        onClose={() => setAccountOpen(false)}
+        onConnect={() => kite.openDialog()}
+        onCancelConnect={kite.cancel}
+        onDisconnect={disconnectKite}
+        onSignOut={signOut}
+        signingOut={signingOut}
+      />
+    ) : null}
     <KiteDialog
       kiteUntil={shell.kiteUntil}
       mode={kite.state.mode}
@@ -367,56 +599,73 @@ function LoggedInChat() {
       </div>
     ) : null;
 
-  if (view.kind === 'thread') {
-    if (!detail) {
+  const renderChat = () => {
+    if (view.kind === 'thread') {
+      if (!detail) {
+        return (
+          <>
+            <Conversation {...shell} history={[]} key={`loading:${view.id}`} title={threads.find((t) => t.id === view.id)?.title ?? ''} />
+            {dialog}
+          </>
+        );
+      }
       return (
         <>
-          <Conversation {...shell} history={[]} key={`loading:${view.id}`} title={threads.find((t) => t.id === view.id)?.title ?? ''} />
+          <Conversation
+            {...shell}
+            afterThread={noteFor(detail.id)}
+            history={detail.messages}
+            key={`thread:${detail.id}`}
+            onKiteExpired={refreshBroker}
+            onTurnSettled={settled}
+            onPrefilled={clearPrefill}
+            prefillText={prefill?.text}
+            queued={connected ? queued : null}
+            onQueuedSent={clearQueued}
+            session={{ sessionId: detail.eveSessionId, streamIndex: detail.streamIndex }}
+            title={detail.title}
+          />
           {dialog}
         </>
       );
     }
+    const draftKey = view.kind === 'draft' ? view.n : 'watchers';
     return (
       <>
         <Conversation
           {...shell}
-          afterThread={noteFor(detail.id)}
-          history={detail.messages}
-          key={`thread:${detail.id}`}
+          afterThread={noteFor(null)}
+          history={[]}
+          key={`draft:${draftKey}`}
           onKiteExpired={refreshBroker}
+          onQueuedSent={clearQueued}
+          onSessionCreated={(sid) => {
+            setAdopted(sid);
+            setCarry(null);
+            void refreshThreads();
+          }}
           onTurnSettled={settled}
           onPrefilled={clearPrefill}
-          prefillText={prefill?.text}
+            prefillText={prefill?.text}
           queued={connected ? queued : null}
-          onQueuedSent={() => setQueued(null)}
-          session={{ sessionId: detail.eveSessionId, streamIndex: detail.streamIndex }}
-          title={detail.title}
+          title={adoptedThread?.title ?? null}
         />
         {dialog}
       </>
     );
-  }
-  const draftKey = view.kind === 'draft' ? view.n : 'watchers';
-  return (
-    <>
-      <Conversation
-        {...shell}
-        afterThread={noteFor(null)}
-        history={[]}
-        key={`draft:${draftKey}`}
-        onKiteExpired={refreshBroker}
-        onQueuedSent={() => setQueued(null)}
-        onSessionCreated={(sid) => {
-          setAdopted(sid);
-          void refreshThreads();
-        }}
-        onTurnSettled={settled}
-        onPrefilled={clearPrefill}
-          prefillText={prefill?.text}
-        queued={connected ? queued : null}
-        title={adoptedThread?.title ?? null}
-      />
-      {dialog}
-    </>
-  );
+  };
+
+  if (!tourReady) return null;
+  return <>
+    <div className={tour.launch ? 'tour-launch' : undefined} inert={tour.show && !tour.launch}>
+      {renderChat()}
+      {!kite.open && !accountOpen && !trade && <TourHelp onReplay={() => {
+        setTourQuestion(savedQuestion);
+        tour.setShow(true);
+      }} />}
+    </div>
+    {tour.show && <div className={tour.launch ? 'tour-exit' : undefined} inert={tour.launch}>
+      <Tour error={tourError} initialMarkets={tourMarkets} onFinish={(markets, connect) => void finishTour(markets, connect)} question={tourQuestion} sample saving={tourSaving} />
+    </div>}
+  </>;
 }

@@ -241,7 +241,7 @@ with sync_playwright() as pw:
     mobile.wait_for_selector('.ms7.ok')
     check('mobile Publisher completion restores the sheet', mobile.locator('.tk7').is_visible())
 
-    # Signed-out email links survive email-OTP login, using the existing login form.
+    # Signed-out email links survive the homepage OTP sheet.
     signed_out = browser.new_context(viewport={'width':1440,'height':900})
     login_requests = []
     def login_rest(route):
@@ -257,17 +257,17 @@ with sync_playwright() as pw:
     anon = signed_out.new_page()
     anon.goto(f'{APP}/chat?trade=1&tradingsymbol=GOLDBEES&side=BUY&quantity=7&from=email')
     anon.wait_for_selector('input[type=email]')
-    anon.wait_for_function("Object.keys(document.querySelector('input[type=email]')).some(k=>k.startsWith('__reactProps$'))")
     check('signed-out trade link goes to login with a return path', 'returnTo=' in anon.url)
     anon.fill('input[type=email]', 'you@example.com')
-    anon.get_by_role('button', name='Send login code').click()
+    anon.get_by_role('button', name='Send code').click()
     try:
         anon.wait_for_selector('input[inputmode=numeric]', timeout=10000)
     except Exception:
         print('Login diagnostics:', login_requests, anon.locator('body').inner_text(), flush=True)
         raise
-    anon.fill('input[inputmode=numeric]', '123456')
-    anon.get_by_role('button', name='Sign in', exact=True).click()
+    anon.locator('.codes input').first.focus()
+    anon.keyboard.type('123456')
+    anon.get_by_role('link', name='Open chat').click()
     anon.wait_for_selector('.go7:not(:disabled)')
     check('login returns to the original prefilled ticket', '/chat' in anon.url and anon.locator('#q7').input_value() == '7' and 'From your alert email' in anon.locator('.sy7 .fr').inner_text())
     browser.close()

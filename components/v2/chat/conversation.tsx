@@ -9,7 +9,6 @@ import { callTimes, liveAnswer, storedAnswer } from '@/lib/v2/answer-parts';
 import { AnswerMessage, UserMessage } from './answer';
 import { ChatShell, type ChatShellProps } from './chat-shell';
 import type { ComposerHandle } from './composer';
-import { SourcesList, SourcesPane } from './sources-panel';
 import { toast } from './toast';
 import { WatcherConfirmCard } from './watcher-card';
 import { useWatchThis } from './use-watch-this';
@@ -27,7 +26,7 @@ import type { TradeContext } from '@/lib/v2/trade';
 
 type ShellPassthrough = Omit<
   ChatShellProps,
-  'busy' | 'empty' | 'title' | 'children' | 'onAsk' | 'onStop' | 'hasSources' | 'sourcesPanel' | 'sourcesPane' | 'dockRef' | 'heroRef' | 'pulseKey' | 'onShare'
+  'busy' | 'empty' | 'title' | 'children' | 'onAsk' | 'onStop' | 'dockRef' | 'heroRef' | 'pulseKey' | 'onShare'
 >;
 
 export function Conversation({
@@ -148,9 +147,6 @@ export function Conversation({
   const storedModels = useMemo(() => history.filter((m) => m.role === 'assistant').map((m) => [m.id, storedAnswer(m.content, m.parts, m.createdAt)] as const), [history]);
   const empty = history.length === 0 && live.length === 0;
 
-  // The side panel: the latest finished answer's requests, or a skeleton while one runs.
-  const latest = [...models.values()].reverse().find((m) => m.status === 'done') ?? storedModels[storedModels.length - 1]?.[1];
-  const panelSources = latest?.sources ?? [];
   const lastQuestion = [...live].reverse().find((m) => m.role === 'user')?.parts.find((p) => p.type === 'text')?.text ?? [...history].reverse().find((m) => m.role === 'user')?.content ?? '';
 
   const share = async () => {
@@ -204,8 +200,8 @@ export function Conversation({
   const prefilled = useRef(false);
   useEffect(() => {
     if (!prefillText || prefilled.current) return;
-    prefilled.current = true;
     const t = window.setTimeout(() => {
+      prefilled.current = true;
       (empty ? hero : dock).current?.setValue(prefillText, { start: prefillText.length, end: prefillText.length });
       onPrefilled?.();
     }, 60);
@@ -223,14 +219,11 @@ export function Conversation({
       dockAbove={watchPanel}
       dockRef={dock}
       empty={empty}
-      hasSources={busy || panelSources.length > 0}
       heroRef={hero}
       onAsk={askAndCloseWatch}
       onShare={share}
       onStop={stop}
       pulseKey={pulseKey}
-      sourcesPane={<SourcesPane loading={busy} sources={busy ? [] : panelSources} />}
-      sourcesPanel={<SourcesList loading={busy} sources={busy ? [] : panelSources} />}
       title={shownTitle}
     >
       {history.map((m) => {

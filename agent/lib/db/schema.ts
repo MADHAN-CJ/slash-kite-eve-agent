@@ -129,3 +129,10 @@ export type WatcherLinkRow = typeof watcherLinks.$inferSelect;
 export type SessionContextRow = typeof sessionContext.$inferSelect;
 export type ThreadRow = typeof threads.$inferSelect;
 export type MessageRow = typeof messages.$inferSelect;
+
+/** App onboarding state and the markets selected by the account owner. */
+export const onboarding = eve.table('onboarding', {
+  userId: uuid('user_id').primaryKey(),
+  markets: text('markets').array().notNull().default(sql`ARRAY[]::text[]`),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+});

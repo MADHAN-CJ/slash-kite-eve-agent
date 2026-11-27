@@ -218,6 +218,7 @@ export function AnswerMessage({
   // Tabs, marks and the Sources card belong to a finished answer (the prototype only adds them then).
   const hasSources = m.sources.length > 0 && finished;
   const [tab, setTab] = useState<'answer' | 'chart' | 'code'>('answer');
+  const tabId = `t5-${index}`;
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [openRows, setOpenRows] = useState<Set<number>>(() => new Set([1]));
   const [hi, setHi] = useState<number | null>(null);
@@ -229,6 +230,16 @@ export function AnswerMessage({
   const footer = footerFor(m);
   const codeOf = m.sources.filter((s) => s.code);
   const hasCode = codeOf.length > 0;
+  const tabs = [['answer', 'Answer'] as const, ...(m.chart ? [['chart', 'Chart'] as const] : []), ...(hasCode ? [['code', 'Code'] as const] : [])];
+  const onTabKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const keys = tabs.map(([k]) => k);
+    const at = keys.indexOf(tab);
+    const next = e.key === 'ArrowRight' ? keys[(at + 1) % keys.length] : e.key === 'ArrowLeft' ? keys[(at - 1 + keys.length) % keys.length] : e.key === 'Home' ? keys[0] : e.key === 'End' ? keys.at(-1) : undefined;
+    if (!next) return;
+    e.preventDefault();
+    setTab(next);
+    (e.currentTarget.querySelector(`#${tabId}-${next}`) as HTMLElement | null)?.focus();
+  };
   const firstSymbol = m.sources[0]?.symbol ?? '';
 
   const openSource = (n: number) => {
@@ -286,20 +297,23 @@ export function AnswerMessage({
       </div>
       <Plan live={planLive} steps={m.steps} />
       {hasSources ? (
-        <div className="tb5" role="tablist">
-          <button className={tab === 'answer' ? 'is-on' : undefined} data-t5="answer" onClick={() => setTab('answer')} type="button">
-            Answer
-          </button>
-          {m.chart ? (
-            <button className={tab === 'chart' ? 'is-on' : undefined} data-t5="chart" onClick={() => setTab('chart')} type="button">
-              Chart
+        <div aria-label="Answer views" className="tb5" onKeyDown={onTabKey} role="tablist">
+          {tabs.map(([key, label]) => (
+            <button
+              aria-controls={`${tabId}-${key}-panel`}
+              aria-selected={tab === key}
+              className={tab === key ? 'is-on' : undefined}
+              data-t5={key}
+              id={`${tabId}-${key}`}
+              key={key}
+              onClick={() => setTab(key)}
+              role="tab"
+              tabIndex={tab === key ? 0 : -1}
+              type="button"
+            >
+              {label}
             </button>
-          ) : null}
-          {hasCode ? (
-            <button className={tab === 'code' ? 'is-on' : undefined} data-t5="code" onClick={() => setTab('code')} type="button">
-              Code
-            </button>
-          ) : null}
+          ))}
         </div>
       ) : null}
       {footer?.kind === 'error' ? (
@@ -336,13 +350,13 @@ export function AnswerMessage({
         <div className="md" dangerouslySetInnerHTML={{ __html: html }} onClick={onBody} />
       ) : null}
       {hasSources && m.chart ? (
-        <div className="pn5 ch5">
+        <div aria-labelledby={`${tabId}-chart`} className="pn5 ch5" id={`${tabId}-chart-panel`} role="tabpanel">
           <ChartPane spec={m.chart} />
           <p>Drawn from the candles the script read.</p>
         </div>
       ) : null}
       {hasSources && hasCode ? (
-        <div className="pn5 co5">
+        <div aria-labelledby={`${tabId}-code`} className="pn5 co5" id={`${tabId}-code-panel`} role="tabpanel">
           <pre
             // biome-ignore lint/security/noDangerouslySetInnerHtml: escaped by highlightPython
             dangerouslySetInnerHTML={{

@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: Request) {
   try {
     const body = (await req.json().catch(() => null)) as { email?: string; code?: string } | null;
-    if (!body?.email || !body?.code) {
+    if (typeof body?.email !== 'string' || !body.email.trim() || typeof body.code !== 'string' || !/^\d{6}$/.test(body.code.trim())) {
       return Response.json({ error: 'Email and code are required.' }, { status: 400 });
     }
     const user = await verifyOtp(body.email, body.code);

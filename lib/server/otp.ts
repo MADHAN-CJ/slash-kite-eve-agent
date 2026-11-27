@@ -1,5 +1,7 @@
-import { and, eq, gt, isNull, sql } from 'drizzle-orm';
-import { db } from '@/agent/lib/db/client';
+import { randomInt } from 'node:crypto';
+import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm';
+import { db, type Db } from '@/agent/lib/db/client';
+import { onboarding } from '@/agent/lib/db/schema';
 import { otps, users } from '@/agent/lib/db/mcp-schema';
 import { otpHash } from './mcp-crypto';
 import { HttpError } from './auth';
@@ -37,35 +39,59 @@ export async function requestOtp(rawEmail: string): Promise<void> {
   });
   if (recent) throw new HttpError(429, 'A code was just sent — wait a moment before requesting another.');
 
-  const code = String(Math.floor(100000 + Math.random() * 900000));
-  await db()
+  const code = String(randomInt(100000, 1000000));
+  const [issued] = await db()
     .insert(otps)
-    .values({ email, codeHash: otpHash(code, email), expiresAt: new Date(Date.now() + OTP_TTL_MS) });
-  await sendOtpEmail(email, code);
+    .values({ email, codeHash: otpHash(code, email), expiresAt: new Date(Date.now() + OTP_TTL_MS) })
+    .returning({ id: otps.id });
+  try {
+    await sendOtpEmail(email, code);
+  } catch (error) {
+    await db().delete(otps).where(eq(otps.id, issued.id));
+    throw error;
+  }
 }
 
 export async function verifyOtp(rawEmail: string, code: string): Promise<{ userId: string; email: string }> {
   const email = normalize(rawEmail);
   const trimmed = code.trim();
   const dev = devLogin();
-  const valid = dev && dev.email === email ? trimmed === dev.code : await consumeStoredOtp(email, trimmed);
-  if (!valid) throw new HttpError(401, 'Invalid or expired code.');
+  return db().transaction(async (tx) => {
+    const valid = dev && dev.email === email ? trimmed === dev.code : await consumeStoredOtp(tx, email, trimmed);
+    if (!valid) throw new HttpError(401, 'Invalid or expired code.');
 
-  const [user] = await db()
-    .insert(users)
-    .values({ email })
-    .onConflictDoUpdate({ target: users.email, set: { email } }) // no-op update to RETURNING the row
-    .returning({ id: users.id, email: users.email });
-  return { userId: user.id, email: user.email };
+    const [created] = await tx
+      .insert(users)
+      .values({ email })
+      .onConflictDoNothing({ target: users.email })
+      .returning({ id: users.id, email: users.email });
+    if (created) {
+      await tx.insert(onboarding).values({ userId: created.id });
+      return { userId: created.id, email: created.email };
+    }
+
+    const existing = await tx.query.users.findFirst({ where: eq(users.email, email) });
+    if (!existing) throw new HttpError(409, 'Your account changed. Request another code.');
+    return { userId: existing.id, email: existing.email };
+  });
 }
 
-async function consumeStoredOtp(email: string, code: string): Promise<boolean> {
-  const updated = await db()
+type Transaction = Parameters<Parameters<Db['transaction']>[0]>[0];
+
+async function consumeStoredOtp(tx: Transaction, email: string, code: string): Promise<boolean> {
+  // A resend supersedes earlier codes even if they have time left.
+  const latest = tx
+    .select({ id: otps.id })
+    .from(otps)
+    .where(eq(otps.email, email))
+    .orderBy(desc(otps.id))
+    .limit(1);
+  const updated = await tx
     .update(otps)
     .set({ consumedAt: new Date() })
     .where(
       and(
-        eq(otps.email, email),
+        eq(otps.id, latest),
         eq(otps.codeHash, otpHash(code, email)),
         isNull(otps.consumedAt),
         gt(otps.expiresAt, sql`now()`),
@@ -78,6 +104,8 @@ async function consumeStoredOtp(email: string, code: string): Promise<boolean> {
 async function sendOtpEmail(email: string, code: string): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
+    if (process.env.NODE_ENV === 'production')
+      throw new HttpError(503, 'Email delivery is unavailable. Try again later.');
     console.warn(`[otp] RESEND_API_KEY unset — login code for ${email}: ${code}`);
     return;
   }

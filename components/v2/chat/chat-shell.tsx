@@ -3,6 +3,7 @@
 import { type ReactNode, type Ref, useCallback, useEffect, useRef, useState } from 'react';
 import { Mark, Word } from './brand';
 import { Composer, type ComposerHandle } from './composer';
+import { useFocusTrap } from './use-focus-trap';
 import { DepthBand } from './depth-band';
 import { ArrowRight, Icon } from './icons';
 
@@ -38,8 +39,76 @@ export interface ShellGate {
 /** How the box behaves while Kite is not connected: `readonly` = connect-kite's gate (dimmed, a tap opens the dialog); `off` = the morning's greyed box (one tap reconnects). */
 export type ComposerGate = 'readonly' | 'off';
 
+/**
+ * V10 limits (run.js `limits(kind)`): credits `low` colours the bar, `out` replaces the
+ * docked box with the credits card; a `long` chat gets a soft note above the box and a
+ * `full` one the carry-over card instead of it (textarea disabled).
+ */
+export interface ShellLimits {
+  readonly credits?: 'low' | 'out' | null;
+  readonly chat?: 'long' | 'full' | null;
+  /** ISO date the credits come back (the card's "1 Dec"). */
+  readonly resetsOn?: string;
+  /** What carries over when a full chat is left. */
+  readonly carry?: string;
+  readonly onPlans?: () => void;
+  readonly onWait?: () => void;
+  readonly onNewChat?: () => void;
+  readonly onCarry?: () => void;
+}
+
+/** The "Carried over from your last chat" line above the hero box (run.js `#cy5`). */
+export interface ShellCarry {
+  readonly text: string;
+  readonly onDismiss: () => void;
+}
+
+/** "1 Dec" from an ISO date, the way the prototype's card names the renewal day. */
+export function renewalDay(iso?: string): string {
+  if (!iso) return 'next month';
+  const d = new Date(`${iso}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? 'next month' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
+
+function LimitSlot({ limits }: { readonly limits: ShellLimits }) {
+  if (limits.credits === 'out') {
+    const day = renewalDay(limits.resetsOn);
+    return (
+      <div className="lc5">
+        <b>You’ve used this month’s credits.</b>
+        <p>They come back on {day}. Your chats stay here to read.</p>
+        <div className="bt5">
+          <button className="pr5" data-l="plans" onClick={limits.onPlans} type="button">See plans</button>
+          <button data-l="wait" onClick={limits.onWait} type="button">Wait for {day}</button>
+        </div>
+      </div>
+    );
+  }
+  if (limits.chat === 'full') {
+    return (
+      <div className="lc5">
+        <b>This chat is full.</b>
+        <p>Start a new one. We’ll carry over a short summary, so you don’t lose your place.</p>
+        <div className="sm5"><small>What carries over</small>{limits.carry}</div>
+        <div className="bt5">
+          <button className="pr5" data-l="carry" onClick={limits.onCarry} type="button">Start a new chat</button>
+        </div>
+      </div>
+    );
+  }
+  if (limits.chat === 'long') {
+    return (
+      <div className="ln5">
+        <i />
+        <span>This chat is getting long. Answers may slow down.</span>
+        <button data-l="new" onClick={limits.onNewChat} type="button">Start a new chat</button>
+      </div>
+    );
+  }
+  return null;
+}
+
 const RAIL_KEY = 'chat-rail';
-const PANEL_KEY = 'chat-data';
 const DELETE_CONFIRM_MS = 2500;
 const SHARE_FEEDBACK_MS = 1400;
 const EXAMPLES = [
@@ -49,7 +118,7 @@ const EXAMPLES = [
   'Scan for stocks with RSI under 30',
 ] as const;
 /** Behind the Kite gate the starters are led by "Surprise me" (connect-kite flow.js `setGate`). */
-const GATED_EXAMPLES = ['Surprise me with what you can do', 'Where’s support on Reliance?', 'Crude mein aaj ka range kya hai?', 'Scan for stocks with RSI under 30'] as const;
+export const GATED_EXAMPLES = ['Surprise me with what you can do', 'Where’s support on Reliance?', 'Crude mein aaj ka range kya hai?', 'Scan for stocks with RSI under 30'] as const;
 
 function creditsText(left: number): string {
   if (left === 0) return 'No credits left this month';
@@ -123,6 +192,8 @@ function SearchPanel({
   const [active, setActive] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   const results = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  useFocusTrap(box, open, '#sq');
 
   useEffect(() => {
     if (!open) return;
@@ -157,7 +228,7 @@ function SearchPanel({
       }}
       role="dialog"
     >
-      <div className="sbox">
+      <div className="sbox" ref={box}>
         <div className="row">
           <Icon name="search" />
           <input
@@ -280,18 +351,20 @@ export interface ChatShellProps {
   readonly onGateTap?: (question?: string) => void;
   /** A question saved until Kite connects, shown above the box. */
   readonly waitingQuestion?: string;
+  readonly gateQuestion?: ReactNode;
+  readonly gatePulseKey?: number;
+  readonly starters?: readonly string[];
   /** The mint strip after connecting (connect-kite `kok`). */
   readonly connectedStrip?: { text: string; sub: string } | null;
   /** Watchers paused because the Kite session ended (morning `bd9`). */
   readonly pausedWatchers?: number;
-  /** The answer in view has sources: the right-hand panel may open. */
-  readonly hasSources?: boolean;
-  readonly sourcesPanel?: ReactNode;
-  /** The narrow-screen Sources pane (same content, inside the thread column). */
-  readonly sourcesPane?: ReactNode;
   readonly watchers?: ReactNode;
   /** Cards that replace or sit above the docked composer (limits). */
   readonly dockNotice?: ReactNode;
+  /** V10: credits low/out and long/full chat. */
+  readonly limits?: ShellLimits;
+  /** V10: the carried-over summary above the hero box of a new chat. */
+  readonly carry?: ShellCarry | null;
   /** Above the docked box (the Watch this panel, run.js `#wq5` before `#form1`). */
   readonly dockAbove?: ReactNode;
   readonly dockRef?: Ref<ComposerHandle>;
@@ -315,29 +388,10 @@ export function ChatShell(p: ChatShellProps) {
   const view = p.view ?? 'chat';
   const [drawer, setDrawer] = useState(false);
   const [search, setSearch] = useState(false);
-  const [tab, setTab] = useState<'answer' | 'data'>('answer');
-  const [panelOn, setPanelOn] = useState(true);
   const [stuck, setStuck] = useState(true);
   const [scrolled, setScrolled] = useState(false);
   const [shared, setShared] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    try {
-      setPanelOn(localStorage.getItem(PANEL_KEY) !== '0');
-    } catch {
-      // storage unavailable: the panel starts open
-    }
-  }, []);
-
-  const setPanel = (on: boolean) => {
-    setPanelOn(on);
-    try {
-      localStorage.setItem(PANEL_KEY, on ? '1' : '0');
-    } catch {
-      // storage unavailable
-    }
-  };
 
   const toggleRail = () => {
     const on = document.documentElement.classList.toggle('rail');
@@ -379,10 +433,9 @@ export function ChatShell(p: ChatShellProps) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // A new conversation or a new chat always opens on the answer, not on Sources.
+  // Reset the scroll position tracking for each conversation.
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset when the conversation changes
   useEffect(() => {
-    setTab('answer');
     setStuck(true);
   }, [p.currentId, p.empty]);
 
@@ -459,6 +512,19 @@ export function ChatShell(p: ChatShellProps) {
 
   const dataLabel = p.auth === 'delayed' ? '15M' : 'KITE';
   const gated = Boolean(p.composerGate);
+  // The prototype empties the starters only when the gate is set with a question already
+  // queued (tour/connect-kite `setGate`); a chip tapped behind the gate leaves the chips up.
+  const [tappedStarter, setTappedStarter] = useState('');
+  const hideStarters = gated && Boolean(p.waitingQuestion) && p.waitingQuestion !== tappedStarter;
+  const gateBannerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const banner = gateBannerRef.current;
+    if (!p.gatePulseKey || !banner) return;
+    banner.classList.remove('tpulse');
+    void banner.offsetWidth;
+    banner.classList.add('tpulse');
+  }, [p.gatePulseKey]);
+
   // body.gated dims the hero box (connect-kite flow.css); the class lives on <body> there.
   useEffect(() => {
     document.body.classList.toggle('gated', p.composerGate === 'readonly');
@@ -488,13 +554,16 @@ export function ChatShell(p: ChatShellProps) {
       </>
     ));
 
+  const limitCard = p.limits?.credits === 'out' || p.limits?.chat === 'full';
+  const limitOn = Boolean(limitCard || p.limits?.chat === 'long');
   const appClass = [
     'app',
     p.empty ? 'empty' : '',
     p.busy ? 'busy' : '',
     view === 'watchers' ? 'view-alerts' : '',
-    p.hasSources ? 'has-data' : '',
-    panelOn ? '' : 'data-off',
+    p.limits?.credits === 'low' ? 'cr-low' : '',
+    p.limits?.credits === 'out' ? 'cr-out' : '',
+    limitCard ? 'lim-card' : '',
   ]
     .filter(Boolean)
     .join(' ');
@@ -503,7 +572,7 @@ export function ChatShell(p: ChatShellProps) {
     <>
       <div className={drawer ? 'scrim on' : 'scrim'} id="scrim" onClick={() => setDrawer(false)} />
       <SearchPanel onClose={() => setSearch(false)} onOpenChat={p.onOpenChat} open={search} sessions={p.sessions} />
-      <div className={appClass} data-auth={p.auth} data-tab={tab} id="app">
+      <div className={appClass} data-auth={p.auth} id="app">
         <aside aria-label="Navigation" className={drawer ? 'side open' : 'side'} id="side">
           <div className="s-top">
             <Mark />
@@ -599,26 +668,13 @@ export function ChatShell(p: ChatShellProps) {
               title={p.title}
             />
             <span className="sp" />
-            <button
-              aria-label="Show sources"
-              aria-pressed={tab === 'data'}
-              className="ib"
-              id="dview"
-              onClick={() => setTab((t) => (t === 'data' ? 'answer' : 'data'))}
-              type="button"
-            >
-              <Icon name="data" />
-            </button>
-            <button aria-label="Show sources" className="ib dopen" data-tip="Show sources" id="dopen" onClick={() => setPanel(true)} type="button">
-              <Icon name="chevronsLeft" />
-            </button>
             <button className="share" id="share" onClick={() => void share()} type="button">
               <Icon name="share" />
               <span>{shared ? 'Copied' : 'Share'}</span>
             </button>
           </header>
 
-          <div className={p.gate?.busy ? 'nb w9' : 'nb'} id="nb">
+          <div className={p.gate?.busy ? 'nb w9' : 'nb'} id="nb" ref={gateBannerRef}>
             {p.gate?.busy ? <span className="sp9" /> : null}
             <span className="nt" id="nbt">
               {p.gate?.text ?? ''}
@@ -653,7 +709,7 @@ export function ChatShell(p: ChatShellProps) {
               <h1>What do you want to know?</h1>
               <div className={p.waitingQuestion && gated ? 'on' : undefined} id="waitq">
                 {p.waitingQuestion && gated ? (
-                  <div className="qcard">
+                  p.gateQuestion ?? <div className="qcard">
                     <div className="qh">
                       <i className="dot" />
                       Your question<span className="st">runs after Kite</span>
@@ -662,6 +718,14 @@ export function ChatShell(p: ChatShellProps) {
                   </div>
                 ) : null}
               </div>
+              {p.carry ? (
+                <div className="cy5 is-on" id="cy5">
+                  <div><small>Carried over from your last chat</small>{p.carry.text}</div>
+                  <button aria-label="Remove" onClick={p.carry.onDismiss} type="button">
+                    <svg className="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg>
+                  </button>
+                </div>
+              ) : null}
               <Composer
                 busy={p.busy}
                 dataLabel={dataLabel}
@@ -678,8 +742,15 @@ export function ChatShell(p: ChatShellProps) {
                 pulseKey={p.pulseKey}
               />
               <div className="ex" id="ex">
-                {(gated && p.waitingQuestion ? [] : gated ? GATED_EXAMPLES : EXAMPLES).map((t, i) => (
-                  <button className={gated && i === 0 ? 'sur' : undefined} key={t} onClick={() => (gated ? p.onGateTap?.(t) : p.onAsk(t))} type="button">
+                {(hideStarters ? [] : (p.starters ?? (gated ? GATED_EXAMPLES : EXAMPLES))).map((t, i) => (
+                  <button className={i === 0 && (gated || t.startsWith('Surprise me')) ? 'sur' : undefined} key={t} onClick={() => {
+                    if (!gated) {
+                      p.onAsk(t);
+                      return;
+                    }
+                    setTappedStarter(t);
+                    p.onGateTap?.(t);
+                  }} type="button">
                     {t}
                   </button>
                 ))}
@@ -692,14 +763,11 @@ export function ChatShell(p: ChatShellProps) {
                 <div aria-live="polite" className="col convo" id="list">
                   {p.children}
                 </div>
-                <div className="col pane" id="p-data">
-                  <div id="datalist">{p.sourcesPane}</div>
-                </div>
               </div>
-              <div className="dock-wrap" id="dockwrap" style={tab === 'data' ? { display: 'none' } : undefined}>
+              <div className="dock-wrap" id="dockwrap">
                 <button
                   aria-label="Jump to latest"
-                  className={!stuck && tab === 'answer' && !p.empty ? 'on' : undefined}
+                  className={!stuck && !p.empty ? 'on' : undefined}
                   id="jump"
                   onClick={jump}
                   type="button"
@@ -710,7 +778,7 @@ export function ChatShell(p: ChatShellProps) {
                 <Composer
                   busy={p.busy}
                   dataLabel={dataLabel}
-                  disabled={p.composerDisabled || p.composerGate === 'off'}
+                  disabled={p.composerDisabled || p.composerGate === 'off' || p.limits?.chat === 'full'}
                   gate={p.composerGate}
                   handle={p.dockRef}
                   id="form1"
@@ -720,7 +788,8 @@ export function ChatShell(p: ChatShellProps) {
                   placeholder={p.composerPlaceholder}
                   pulseKey={p.pulseKey}
                 />
-                <div className="lim5" id="lim5">
+                <div className={limitOn || p.dockNotice ? 'lim5 is-on' : 'lim5'} id="lim5">
+                  {p.limits ? <LimitSlot limits={p.limits} /> : null}
                   {p.dockNotice}
                 </div>
                 <CreditsLine left={p.creditsLeft} />
@@ -728,18 +797,6 @@ export function ChatShell(p: ChatShellProps) {
             </div>
           </div>
         </main>
-        <aside aria-label="Sources" className="right" id="right">
-          <div className="r-in">
-            <div className="r-top">
-              <span>Sources</span>
-              <button aria-label="Hide sources" className="ib" data-tip="Hide sources" id="dclose" onClick={() => setPanel(false)} type="button">
-                <Icon name="chevronsRight" />
-              </button>
-            </div>
-            <div id="rlist">{p.sourcesPanel}</div>
-            <div className="r-foot">Fetched through the /markets API by your AI. The numbers in the answer come from these requests.</div>
-          </div>
-        </aside>
       </div>
       <div className="toast2" id="toast2" />
     </>

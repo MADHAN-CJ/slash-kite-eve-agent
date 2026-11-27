@@ -14,6 +14,7 @@ export interface BrokerStatus {
   userName: string | null;
   connectedAt: string | null;
   expiresAt: string | null;
+  disconnectedAt?: string;
   publisherApiKey: string | null;
 }
 

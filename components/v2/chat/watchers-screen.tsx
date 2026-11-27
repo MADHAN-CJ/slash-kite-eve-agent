@@ -220,33 +220,56 @@ export function WatchersScreen({
 
   const listCol = (
     <div className="lc8">
-      <div className="sg8">
+      <div
+        aria-label="Watchers"
+        className="sg8"
+        onKeyDown={(e) => {
+          if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Home' && e.key !== 'End') return;
+          e.preventDefault();
+          const next = tab === 'active' ? 'done' : 'active';
+          setTab(next);
+          setSel(null);
+          setCode(false);
+          e.currentTarget.querySelector<HTMLButtonElement>(`[data-tab="${next}"]`)?.focus();
+        }}
+        role="tablist"
+      >
         <button
+          aria-controls="w8-panel"
+          aria-selected={tab === 'active'}
           className={tab === 'active' ? 'is-on' : undefined}
           data-tab="active"
+          id="w8-tab-active"
           onClick={() => {
             setTab('active');
             setSel(null);
             setCode(false);
           }}
+          role="tab"
+          tabIndex={tab === 'active' ? 0 : -1}
           type="button"
         >
           Active<small>{live.length}</small>
         </button>
         <button
+          aria-controls="w8-panel"
+          aria-selected={tab === 'done'}
           className={tab === 'done' ? 'is-on' : undefined}
           data-tab="done"
+          id="w8-tab-done"
           onClick={() => {
             setTab('done');
             setSel(null);
             setCode(false);
           }}
+          role="tab"
+          tabIndex={tab === 'done' ? 0 : -1}
           type="button"
         >
           Finished<small>{done.length}</small>
         </button>
       </div>
-      <div className="ls8">
+      <div aria-labelledby={`w8-tab-${tab}`} className="ls8" id="w8-panel" role="tabpanel">
         {list.map((x) => (
           <button
             className={x.id === w?.id ? 'is-on' : undefined}

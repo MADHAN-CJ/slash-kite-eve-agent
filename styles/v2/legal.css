@@ -1,0 +1,43 @@
+/* v2 legal pages (terms, privacy, support) on the shared tokens — the prototype has no legal
+   screens (plan-v2 scope table), so these keep the v1 pages' structure and rhythm in the v2 face. */
+html{background:var(--bg);color:var(--body);font:400 16px/1.6 'TS',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+body{margin:0;background:var(--bg)}
+.lg2{max-width:760px;margin:0 auto;padding:12px 20px 64px}
+.lg2-top{position:sticky;top:12px;z-index:5;display:flex;align-items:center;gap:16px;padding:8px 14px;border:1px solid var(--line);border-radius:8px;background:rgba(15,17,20,.84);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}
+.lg2-top a{color:var(--body);text-decoration:none;font-size:14px}
+.lg2-top a:hover{color:var(--ink)}
+.lg2-top .lg2-home{flex:1;display:flex;align-items:center;color:var(--ink)}
+.lg2-top .lg2-home svg{height:17px;width:auto}
+.lg2-top nav{display:flex;gap:16px}
+.lg2-top nav a[aria-current=page]{color:var(--ink)}
+.legal{margin-top:32px}
+.legal h1{margin:8px 0 4px;font:500 clamp(32px,4.2vw,48px)/1.1 var(--serif);font-variation-settings:'opsz' 36;color:var(--ink);letter-spacing:-.01em}
+.legal .legal-meta{margin:0 0 24px;font:400 11.5px var(--mono);letter-spacing:.04em;color:var(--body)}
+.legal .legal-intro{padding:16px 20px;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.03)}
+.legal .legal-intro p{margin:0}
+.legal .legal-intro p+p{margin-top:10px}
+.legal .legal-toc{margin:28px 0 8px;font-size:15px}
+.legal .legal-toc ol{margin:0;padding:0;list-style:none;columns:2;column-gap:24px}
+.legal .legal-toc li{margin:0 0 6px;break-inside:avoid}
+.legal .legal-toc a{color:var(--body);text-decoration:none}
+.legal .legal-toc a:hover{color:var(--ink);text-decoration:underline;text-underline-offset:4px}
+.legal section{margin-top:36px;scroll-margin-top:80px}
+.legal h2{margin:0 0 12px;font:500 24px/1.25 var(--serif);color:var(--ink)}
+.legal h3{margin:20px 0 8px;font:600 16px/1.4 'TS',system-ui,sans-serif;color:var(--ink)}
+.legal p,.legal li{text-wrap:pretty}
+.legal p{margin:0 0 12px}
+.legal ul,.legal ol{margin:0 0 12px;padding-left:22px}
+.legal li{margin-bottom:6px}
+.legal li::marker{color:var(--body)}
+.legal a{color:var(--ink);text-decoration:underline;text-underline-offset:4px}
+.legal strong{color:var(--ink);font-weight:500}
+.legal .placeholder{color:var(--peach)}
+.legal .mkl{color:var(--ink);font-weight:500;white-space:nowrap}
+.legal .mkl i{font-style:normal;color:var(--slash)}
+.lg2-foot{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;margin-top:48px;padding-top:20px;border-top:1px solid var(--line);font-size:13.5px;color:var(--body)}
+.lg2-foot p{margin:0}
+.lg2-foot nav{display:flex;flex-wrap:wrap;gap:4px 16px}
+.lg2-foot a{color:var(--body);text-decoration:none}
+.lg2-foot a:hover{color:var(--ink);text-decoration:underline;text-underline-offset:4px}
+:focus-visible{outline:2px solid var(--sky);outline-offset:2px;border-radius:4px}
+@media(max-width:520px){.legal .legal-toc ol{columns:1}.lg2-top{top:8px;gap:10px}.lg2-top nav{gap:12px}}

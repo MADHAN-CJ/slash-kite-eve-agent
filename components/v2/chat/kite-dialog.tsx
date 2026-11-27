@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { fmtCountdown, type KiteMode, LOGIN_TIMEOUT_S, untilSix } from '@/lib/v2/kite-login';
 import { Mark } from './brand';
+import { useFocusTrap } from './use-focus-trap';
 
 /**
  * The Connect Kite dialog (markets-hero ux/flows/connect-kite/flow.js), laid
@@ -286,6 +287,7 @@ export function KiteDialog({
     return () => window.clearTimeout(t);
   }, [mode, onDone]);
 
+  useFocusTrap(kd, open, '.c4go, .kxb');
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {

@@ -1,0 +1,459 @@
+{
+  "otp": {
+    "id": "otp",
+    "title": "Sign-in code",
+    "channel": "email",
+    "category": "auth",
+    "summary": "The six-digit code after Send code. Same email for a new account and for signing back in; only the first line changes.",
+    "from": "/markets",
+    "subject": "{{code}} is your /markets code",
+    "preheader": "It works for 10 minutes. If you didn\u2019t ask for it, ignore this email.",
+    "footer": "Sent to {{email}} because someone entered it on /markets. We never ask for this code by phone or chat.",
+    "default": "signup",
+    "links": {},
+    "data": {
+      "code": "417302",
+      "at": "14:11 IST",
+      "device": "Chrome on a Mac"
+    },
+    "variants": [
+      {
+        "id": "signup",
+        "label": "New account",
+        "note": "First Send code for this email.",
+        "data": {
+          "eyebrow": "Sign-up code",
+          "lead": "Enter this code on /markets to finish signing up.",
+          "returning": false
+        }
+      },
+      {
+        "id": "signin",
+        "label": "Signing back in",
+        "note": "The email already has an account.",
+        "data": {
+          "eyebrow": "Sign-in code",
+          "lead": "Enter this code on /markets to sign in.",
+          "returning": true
+        }
+      }
+    ]
+  },
+  "kite-nudge": {
+    "id": "kite-nudge",
+    "title": "Connect Kite nudge",
+    "channel": "email",
+    "category": "growth",
+    "summary": "Signed up, never connected Kite. Day 1 brings back the question they left waiting; day 3 is the last one and says so.",
+    "from": "/markets",
+    "subject": "{{subject}}",
+    "preheader": "{{preheader}}",
+    "footer": "Sent to {{email}} because you signed up and haven\u2019t connected Kite. {{cap}}",
+    "default": "day1",
+    "links": {
+      "connect": {
+        "label": "Connect Kite",
+        "to": "connect-kite",
+        "state": "connect"
+      },
+      "safe": {
+        "label": "Is it safe?",
+        "to": "connect-kite",
+        "state": "faq"
+      },
+      "settings": {
+        "label": "Email settings",
+        "to": "account",
+        "state": "on"
+      }
+    },
+    "data": {},
+    "variants": [
+      {
+        "id": "day1",
+        "label": "Day 1, a question waiting",
+        "note": "24 hours after sign-up. Their homepage question is still queued.",
+        "data": {
+          "subject": "Your question is waiting for Kite",
+          "preheader": "\u201cWhere\u2019s support on Reliance?\u201d runs as soon as Kite is connected.",
+          "eyebrow": "Waiting for Kite",
+          "head": "Your question hasn\u2019t run yet",
+          "lead": "It needs Kite connected to read prices and charts. Connect once, and it runs straight away.",
+          "question": "Where\u2019s support on Reliance?",
+          "asked": "yesterday 14:10",
+          "can": false,
+          "cap": "We send two of these at most."
+        }
+      },
+      {
+        "id": "day3",
+        "label": "Day 3, the last one",
+        "note": "72 hours after sign-up, still not connected. Says it\u2019s the last.",
+        "data": {
+          "subject": "Last note about connecting Kite",
+          "preheader": "After this we stop asking. You can connect any time from the sidebar.",
+          "eyebrow": "Last reminder",
+          "head": "Three things you can ask once Kite is on",
+          "lead": "After this we stop asking. Connect any time from the sidebar.",
+          "question": false,
+          "can": [
+            {
+              "q": "Where\u2019s support on Reliance?",
+              "a": "Levels from the last 20 sessions, and the code that found them."
+            },
+            {
+              "q": "Bank Nifty OI walls this expiry",
+              "a": "Where calls and puts are stacked, strike by strike."
+            },
+            {
+              "q": "Tell me when GOLDBEES drops below 100",
+              "a": "A watcher that checks every minute and emails you."
+            }
+          ],
+          "cap": "This is the last one."
+        }
+      }
+    ]
+  },
+  "kite-reconnect": {
+    "id": "kite-reconnect",
+    "title": "Reconnect Kite",
+    "channel": "email",
+    "category": "watchers",
+    "summary": "08:00 on a trading day, when Kite's 6 AM logout paused watchers. The paused watchers and one Reconnect Kite button. Two mornings in a row at most.",
+    "from": "/markets watchers",
+    "subject": "{{subject}}",
+    "preheader": "Kite ended your session at 6:00 AM. Reconnect before 9:15 and nothing is missed.",
+    "footer": "Sent to {{email}} only on mornings when Kite has paused your watchers, and two mornings in a row at most.",
+    "default": "several",
+    "links": {
+      "kite": {
+        "label": "Reconnect Kite",
+        "to": "morning",
+        "state": "kite"
+      },
+      "watchers": {
+        "label": "Watchers",
+        "to": "watchers",
+        "state": "kite"
+      },
+      "settings": {
+        "label": "Email settings",
+        "to": "account",
+        "state": "on"
+      }
+    },
+    "data": {},
+    "variants": [
+      {
+        "id": "several",
+        "label": "Several paused",
+        "note": "Five watchers paused. The one the morning flow follows on from.",
+        "data": {
+          "subject": "Reconnect Kite to keep 5 watchers running",
+          "eyebrow": "Before the open",
+          "head": "Your watchers are paused",
+          "lead": "Kite ends every session at 6:00 AM. Reconnect before 9:15 and they pick up where they left off.",
+          "after": "Each one\u2019s first check after you reconnect sets a new baseline.",
+          "paused": [
+            {
+              "sym": "RELIANCE",
+              "rule": "15-min candle closes below 2,912"
+            },
+            {
+              "sym": "GOLDBEES",
+              "rule": "Price drops below 100"
+            },
+            {
+              "sym": "CRUDEOIL",
+              "rule": "1-hour candle closes above 6,480"
+            },
+            {
+              "sym": "NIFTY FUT",
+              "rule": "RSI(14) on 15 min goes above 70"
+            },
+            {
+              "sym": "BANKNIFTY",
+              "rule": "Put-call ratio falls under 0.70"
+            }
+          ]
+        }
+      },
+      {
+        "id": "one",
+        "label": "One paused",
+        "note": "A new user with the one watcher from their first question.",
+        "data": {
+          "subject": "Reconnect Kite to keep your RELIANCE watcher running",
+          "eyebrow": "Before the open",
+          "head": "Your RELIANCE watcher is paused",
+          "lead": "Kite ends every session at 6:00 AM, for everyone. Reconnect before 9:15 and it picks up where it left off.",
+          "after": "You\u2019ll do this once a day, on the days you want watchers running.",
+          "paused": [
+            {
+              "sym": "RELIANCE",
+              "rule": "15-min candle closes below 2,912"
+            }
+          ]
+        }
+      },
+      {
+        "id": "last",
+        "label": "Second morning, the last",
+        "note": "Not reconnected yesterday either. Says we stop asking.",
+        "data": {
+          "subject": "Your RELIANCE watcher stays paused until you reconnect",
+          "eyebrow": "Second morning",
+          "head": "We\u2019ll stop asking after today",
+          "lead": "Your watcher has been paused since yesterday at 6:00 AM. It stays paused until you reconnect Kite. We won\u2019t email about it again.",
+          "after": "Paused watchers still end on their end date.",
+          "paused": [
+            {
+              "sym": "RELIANCE",
+              "rule": "15-min candle closes below 2,912"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "watcher-alert": {
+    "id": "watcher-alert",
+    "title": "Watcher alert",
+    "channel": "email",
+    "category": "watchers",
+    "summary": "A watcher's rule turned true. What hit, the value, a chart with your level, the rule, then Open in chat and Trade on Kite.",
+    "from": "/markets watchers",
+    "subject": "{{sym}} {{said}} \u00b7 {{value}}",
+    "preheader": "{{rule}}. Checked at {{at}}, {{ex}}.",
+    "footer": "Facts from market data. Not investment advice. /markets reads data only and never places orders. Sent to {{email}}.",
+    "default": "price",
+    "links": {
+      "chat": {
+        "label": "Open in chat",
+        "to": "ask",
+        "state": "answer"
+      },
+      "trade": {
+        "label": "Trade on Kite",
+        "to": "trade",
+        "state": "email"
+      },
+      "watchers": {
+        "label": "Watchers",
+        "to": "watchers",
+        "state": "active"
+      },
+      "settings": {
+        "label": "Email settings",
+        "to": "account",
+        "state": "on"
+      }
+    },
+    "data": {},
+    "variants": [
+      {
+        "id": "price",
+        "label": "Price level",
+        "note": "GOLDBEES dropped below 100. The one the journey shows.",
+        "data": {
+          "sym": "GOLDBEES",
+          "said": "dropped below 100.00",
+          "value": "99.94",
+          "at": "14:05",
+          "ex": "NSE",
+          "rule": "Price drops below 100",
+          "checks": "Every 1 min, 09:15 to 15:30",
+          "ends": "19 Dec",
+          "chat": "GOLDBEES levels this week",
+          "again": "goes back above 100.00",
+          "chart": "img/price.png",
+          "chartAlt": "GOLDBEES over the last 12 checks, falling through your level of 100 at 14:05"
+        }
+      },
+      {
+        "id": "candle",
+        "label": "Candle close",
+        "note": "RELIANCE, the watcher from the first question, on the 15-min chart.",
+        "data": {
+          "sym": "RELIANCE",
+          "said": "closed below 2,912 on the 15-min chart",
+          "value": "2,909.10",
+          "at": "15:00",
+          "ex": "NSE",
+          "rule": "15-min candle closes below 2,912",
+          "checks": "Every 15 min, 09:15 to 15:30",
+          "ends": "25 Dec",
+          "chat": "Where\u2019s support on Reliance?",
+          "again": "closes back above 2,912",
+          "chart": "img/candle.png",
+          "chartAlt": "RELIANCE 15-min closes today, the last one below your level of 2,912"
+        }
+      },
+      {
+        "id": "indicator",
+        "label": "Indicator",
+        "note": "NIFTY FUT RSI(14) on 15 min went above 70. No price in the chart, just the RSI.",
+        "data": {
+          "sym": "NIFTY FUT",
+          "said": "RSI(14) on 15 min went above 70",
+          "value": "70.4",
+          "at": "11:45",
+          "ex": "NSE",
+          "rule": "RSI(14) on 15 min goes above 70",
+          "checks": "Every 15 min, 09:15 to 15:30",
+          "ends": "9 Dec",
+          "chat": "Nifty RSI on 15 min",
+          "again": "goes back under 70",
+          "chart": "img/indicator.png",
+          "chartAlt": "NIFTY FUT RSI(14) on 15 min, crossing 70 at 11:45"
+        }
+      }
+    ]
+  },
+  "watcher-stopped": {
+    "id": "watcher-stopped",
+    "title": "Watcher stopped",
+    "channel": "email",
+    "category": "watchers",
+    "summary": "A watcher's script failed, so it stopped checking. What broke, when, the last good check, and Fix it in chat.",
+    "from": "/markets watchers",
+    "subject": "Your {{sym}} watcher stopped: {{short}}",
+    "preheader": "It won\u2019t check again until it\u2019s fixed. Fix it in chat hands the error to the agent.",
+    "footer": "Sent to {{email}} once when a watcher stops. Not again for the same error.",
+    "default": "no-data",
+    "links": {
+      "fix": {
+        "label": "Fix it in chat",
+        "to": "ask",
+        "state": "answer"
+      },
+      "watchers": {
+        "label": "Watchers",
+        "to": "watchers",
+        "state": "active"
+      },
+      "settings": {
+        "label": "Email settings",
+        "to": "account",
+        "state": "on"
+      }
+    },
+    "data": {},
+    "variants": [
+      {
+        "id": "no-data",
+        "label": "No data",
+        "note": "TCS had no candles on 22 Nov. Same watcher as the Stopped one on the Watchers screen.",
+        "data": {
+          "sym": "TCS",
+          "rule": "Daily close above 4,210",
+          "short": "no data on 22 Nov",
+          "why": "There were no daily candles for TCS on 22 Nov, so the script had nothing to check.",
+          "stopped": "22 Nov 15:30",
+          "lastGood": "21 Nov 15:30 \u00b7 4,161",
+          "error": "No candles for TCS on 22 Nov",
+          "hint": "Often it\u2019s a holiday or a symbol change."
+        }
+      },
+      {
+        "id": "script",
+        "label": "Script error",
+        "note": "The option chain came back without OI, so the script crashed.",
+        "data": {
+          "sym": "BANKNIFTY",
+          "rule": "Put-call ratio falls under 0.70",
+          "short": "the script failed",
+          "why": "The option chain for the nearest expiry came back without open interest, and the script failed on it.",
+          "stopped": "Today 11:05",
+          "lastGood": "Today 11:00 \u00b7 0.84",
+          "error": "KeyError: 'put_oi'",
+          "hint": "Nothing was emailed for this rule while it was stopped."
+        }
+      }
+    ]
+  },
+  "watcher-ended": {
+    "id": "watcher-ended",
+    "title": "Watcher ended",
+    "channel": "email",
+    "category": "watchers",
+    "summary": "A watcher reached its end date. How it went (ran, emails sent, last value) and Watch again. Sent after the close, never during market hours.",
+    "from": "/markets watchers",
+    "subject": "{{subject}}",
+    "preheader": "{{preheader}}",
+    "footer": "Sent to {{email}} when a watcher reaches its end date. Cancelled watchers don\u2019t get one.",
+    "default": "hit",
+    "links": {
+      "again": {
+        "label": "Watch again",
+        "to": "watchers",
+        "state": "finished"
+      },
+      "watchers": {
+        "label": "Watchers",
+        "to": "watchers",
+        "state": "finished"
+      },
+      "settings": {
+        "label": "Email settings",
+        "to": "account",
+        "state": "on"
+      }
+    },
+    "data": {},
+    "variants": [
+      {
+        "id": "hit",
+        "label": "It hit",
+        "note": "The RELIANCE watcher from the first question, 30 days on. It hit once.",
+        "data": {
+          "subject": "Your RELIANCE watcher ended. It hit once.",
+          "preheader": "30 days, one email on 25 Nov at 15:00. Watch again for another 30.",
+          "sym": "RELIANCE",
+          "rule": "15-min candle closes below 2,912",
+          "lead": "It ran for 30 days and hit once, on 25 Nov at 15:00, the day you set it.",
+          "ran": "25 Nov to 25 Dec",
+          "sent": "1",
+          "lastLabel": "Last value",
+          "last": "2,968.30",
+          "note": "Same level, or ask in chat for a new one."
+        }
+      },
+      {
+        "id": "never",
+        "label": "Never hit",
+        "note": "CRUDEOIL ran its full time and never crossed.",
+        "data": {
+          "subject": "Your CRUDEOIL watcher ended without hitting",
+          "preheader": "It never closed above 6,480. The closest was 6,471 on 28 Nov.",
+          "sym": "CRUDEOIL",
+          "rule": "1-hour candle closes above 6,480",
+          "lead": "It ran for 30 days and never hit. The closest was a 6,471 close on 28 Nov.",
+          "ran": "2 Nov to 2 Dec",
+          "sent": "0",
+          "lastLabel": "Closest",
+          "last": "6,471",
+          "note": "Or ask in chat where the level is now."
+        }
+      },
+      {
+        "id": "paused",
+        "label": "Ended while paused",
+        "note": "Kite was never reconnected, so it spent most of its time paused.",
+        "data": {
+          "subject": "Your RELIANCE watcher ended while paused",
+          "preheader": "It was paused from 26 Nov because Kite wasn\u2019t reconnected.",
+          "sym": "RELIANCE",
+          "rule": "15-min candle closes below 2,912",
+          "lead": "It checked for one day. From 26 Nov it was paused, because Kite wasn\u2019t reconnected after the 6:00 AM logout.",
+          "ran": "25 Nov to 25 Dec",
+          "sent": "0",
+          "lastLabel": "Last checked",
+          "last": "25 Nov 15:30",
+          "note": "Reconnect Kite first, or it pauses again at 6:00 AM."
+        }
+      }
+    ]
+  }
+}

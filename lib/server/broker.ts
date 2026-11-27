@@ -21,6 +21,7 @@ export interface BrokerStatus {
   userName: string | null;
   connectedAt: string | null;
   expiresAt: string | null;
+  disconnectedAt?: string;
   /** Kite Connect api_key, for the Kite Publisher button (public by design). */
   publisherApiKey: string | null;
 }
@@ -40,6 +41,7 @@ export async function brokerStatus(userId: string): Promise<BrokerStatus> {
     userName: row.userName,
     connectedAt: row.connectedAt.toISOString(),
     expiresAt: row.expiresAt?.toISOString() ?? null,
+    disconnectedAt: row.status === 'disconnected' ? row.updatedAt.toISOString() : undefined,
     publisherApiKey,
   };
 }

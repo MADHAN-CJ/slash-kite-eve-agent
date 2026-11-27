@@ -119,9 +119,12 @@ const wordsOf = (text: string) => text.match(/\S+\s*/g) ?? [];
  * first step, `stopped` stops after 14 words, `timeout` never gets text,
  * `kite-expired` loses the session after one sentence.
  */
-export function replay(kind: ReplayKind, emit: (f: ReplayFrame) => void): () => void {
+export function replay(kind: ReplayKind, emitFrame: (f: ReplayFrame) => void, opts: { fast?: boolean } = {}): () => void {
   const timers: number[] = [];
-  const later = (ms: number, fn: () => void) => timers.push(window.setTimeout(fn, ms));
+  // RUN.fast never builds the plan (`.t5` stays empty), so a fast replay drops the steps.
+  const emit = opts.fast ? (f: ReplayFrame) => emitFrame({ ...f, model: { ...f.model, steps: [] } }) : emitFrame;
+  // `fast` = the prototype's RUN.fast: every frame on the next tick, in order (the limit states replay this way).
+  const later = (ms: number, fn: () => void) => timers.push(window.setTimeout(fn, opts.fast ? 0 : ms));
   const tools = kind === 'no-market-data' ? NO_DATA_TOOLS : kind === 'watch' ? WATCH_TOOLS : RELIANCE_TOOLS;
   const fullText = kind === 'no-market-data' ? NO_DATA_REPLY : kind === 'watch' ? WATCH_TEXT : ANSWER_TEXT;
 

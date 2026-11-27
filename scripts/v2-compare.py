@@ -12,6 +12,7 @@ Writes ours / ref / diff / side-by-side PNGs to .v2-compare/<flow>/ (git-ignored
   npm run v2:compare -- ask answer run      some states
   npm run v2:compare -- --all               every flow
   ... --strict                              exit 1 when a state is over the limit
+  ... --live-reference                      capture the current prototype instead of its committed PNG
 A state with no committed reference PNG is compared with the running prototype
 (`npm run serve` in markets-hero), shot the same way.
 Env: APP_BASE_URL (default http://localhost:3000), MARKETS_HERO_DIR (default ../markets-hero),
@@ -41,7 +42,9 @@ PROJECTS = {
     "desktop": {"viewport": {"width": 1440, "height": 900}},
     "mobile": {"viewport": {"width": 390, "height": 844}, "is_mobile": True, "has_touch": True, "user_agent": IPHONE_UA},
 }
-SEED = "let s=42;Math.random=()=>((s=(s*16807)%2147483647)/2147483647);"
+SEED = ("let s=42;const __R=()=>((s=(s*16807)%2147483647)/2147483647);const __RAW=Math.random;"
+        # Next/React dev internals draw a few randoms at module evaluation; they must not shift our seeded sequence.
+        "Math.random=()=>{const c=(new Error().stack||'').split('\\n')[2]||'';return /_next_dist_|next-devtools/.test(c)?__RAW():__R()};")
 STILL = "*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}nextjs-portal{display:none!important}"
 
 
@@ -81,6 +84,7 @@ def side_by_side(ours, ref, out):
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     strict = "--strict" in sys.argv
+    live_reference = "--live-reference" in sys.argv
     flows = json.loads((ROOT / "lib" / "v2" / "flows.json").read_text())["flows"]
     if "--all" in sys.argv:
         wanted = [(f, None) for f in flows]
@@ -106,13 +110,14 @@ def main():
                     ref = HERO / "ux" / "flows" / flow["id"] / "screenshots" / f"{name}.png"
                     ours = out / f"{name}.ours.png"
                     shoot(browser, project, f"{APP}/lab/{flow['id']}?s={st['id']}", ours)
-                    if not ref.exists():
-                        # No committed reference: shoot the running prototype the same way and compare with that.
+                    if live_reference or not ref.exists():
+                        # Capture both implementations with the same browser and clock.
                         ref = out / f"{name}.ref.png"
                         try:
                             shoot(browser, project, f"{PROTO}/flows/{flow['id']}/?s={st['id']}&chrome=0", ref, clear=True)
                         except Exception as e:  # prototype server not running
-                            print(f"·  {flow['id']}:{name}  no reference PNG and the prototype is not reachable ({type(e).__name__})")
+                            failed += 1
+                            print(f"·  {flow['id']}:{name}  could not capture the prototype ({type(e).__name__})")
                             continue
                     ratio, why = diff_ratio(ours, ref, out / f"{name}.diff.png")
                     side_by_side(ours, ref, out / f"{name}.side.png")

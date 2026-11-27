@@ -161,7 +161,7 @@ with sync_playwright() as p:
     page.on("pageerror", lambda e: errors.append(str(e)))
 
     # 1. login (email OTP = the MCP identity now; no second login anywhere)
-    page.goto(APP)
+    page.goto(f"{APP}/workspace")
     page.fill('input[type="email"]', EMAIL)
     page.click("text=Send login code")
     page.fill('input[inputmode="numeric"]', CODE)
@@ -262,7 +262,7 @@ with sync_playwright() as p:
         resp = page.goto(f"{APP}{path}")
         h1 = page.locator("article.legal h1").text_content()
         check(f"{path} renders", resp.status == 200 and h1 == title and page.locator("article.legal section").count() >= 4, h1)
-    page.goto(APP)
+    page.goto(f"{APP}/workspace")
     page.locator("textarea").wait_for(timeout=15_000)
 
     # 6. disconnect → connect screen again → skip → chat with banner

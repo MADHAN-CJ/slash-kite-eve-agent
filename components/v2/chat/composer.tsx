@@ -74,6 +74,15 @@ export function Composer({
   const form = useRef<HTMLFormElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const rec = useRef<SpeechRecognitionLike | null>(null);
+  // The prototype's shell gives the hero box the caret before the gate's focus
+  // listener exists, so a gated box sits focused (sky border) without a pulse.
+  const quiet = useRef(false);
+  useEffect(() => {
+    if (gate !== 'readonly' || !main || disabled) return;
+    quiet.current = true;
+    input.current?.focus({ preventScroll: true });
+    quiet.current = false;
+  }, [gate, main, disabled]);
 
   const grow = () => {
     const t = input.current;
@@ -195,7 +204,7 @@ export function Composer({
         enterKeyHint="send"
         onChange={(e) => setValue(e.target.value)}
         onFocus={() => {
-          if (readOnly && onFocusGated) {
+          if (readOnly && onFocusGated && !quiet.current) {
             input.current?.blur();
             onFocusGated();
           }

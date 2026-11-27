@@ -47,9 +47,12 @@ export function useKiteConnect({ onConnected, onFailed }: { readonly onConnected
       const res = await fetch('/api/broker/kite/login/start', { method: 'POST', headers: { ...authHeaders(), 'content-type': 'application/json' }, body: JSON.stringify({ returnTo: '/kite/done' }) });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'Could not start the Zerodha login.');
       const { loginUrl } = (await res.json()) as { loginUrl: string };
+      // Cancel may have closed the blank window while the request was in flight.
+      if (popup.current !== handle) return;
       const w = window.open(loginUrl, 'kite-login');
       if (!w) throw new Error('The Kite window closed.');
     } catch (e) {
+      if (popup.current !== handle) return;
       handle.close();
       dispatch({ type: 'error', reason: e instanceof Error ? e.message : 'Could not start the Zerodha login.' });
       onFailed?.(e instanceof Error ? e.message : 'Could not start the Zerodha login.');
@@ -61,10 +64,11 @@ export function useKiteConnect({ onConnected, onFailed }: { readonly onConnected
   onConnectedRef.current = onConnected;
   useEffect(() => {
     if (state.mode !== 'wait') return;
+    const handle = popup.current;
     const startedAt = Date.now();
     let settled = false;
     const connected = (status: BrokerStatus) => {
-      if (settled) return;
+      if (settled || popup.current !== handle || status.status !== 'active') return;
       settled = true;
       popup.current?.close();
       popup.current = null;
@@ -80,7 +84,7 @@ export function useKiteConnect({ onConnected, onFailed }: { readonly onConnected
       try {
         const st = await getBrokerStatus();
         if (st.status === 'active' && new Date(st.connectedAt ?? 0).getTime() >= startedAt - 60_000) connected(st);
-        else if (popup.current && popup.current.closed()) dispatch({ type: 'window-closed' });
+        else if (popup.current === handle && handle?.closed()) dispatch({ type: 'window-closed' });
       } catch {
         // the next poll will try again
       }
@@ -104,6 +108,7 @@ export function useKiteConnect({ onConnected, onFailed }: { readonly onConnected
       // no BroadcastChannel: polling covers it
     }
     return () => {
+      settled = true;
       window.clearInterval(tick);
       window.clearInterval(poll);
       channel?.close();

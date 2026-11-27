@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
-import { ChatShell } from '@/components/v2/chat/chat-shell';
+import { ChatShell, GATED_EXAMPLES } from '@/components/v2/chat/chat-shell';
 import { KiteDialog } from '@/components/v2/chat/kite-dialog';
 import { initialKite, kiteReducer, type KiteMode, LOGIN_TIMEOUT_S, nextSixAm, untilSix } from '@/lib/v2/kite-login';
 
@@ -27,6 +27,13 @@ export function ConnectKiteLab({ state }: { readonly state: string }) {
 
   useEffect(() => {
     document.documentElement.dataset.state = state;
+    if (state === 'connect') {
+      try {
+        const question = sessionStorage.getItem('slash-tour-lab:question');
+        sessionStorage.removeItem('slash-tour-lab:question');
+        if (question) setPending(question);
+      } catch {}
+    }
     setKiteUntil(nextSixAm());
     setReady(true);
     const t: Partial<Record<string, () => void>> = {
@@ -117,6 +124,7 @@ export function ConnectKiteLab({ state }: { readonly state: string }) {
         onStop={() => {}}
         onWatchers={() => {}}
         sessions={[]}
+        starters={GATED_EXAMPLES}
         title=""
         waitingQuestion={pending}
       />

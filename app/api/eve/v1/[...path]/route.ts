@@ -4,6 +4,8 @@ import { db } from '@/agent/lib/db/client';
 import { threads } from '@/agent/lib/db/schema';
 import { upsertSessionContext } from '@/agent/lib/db/session-context';
 import { errorResponse, requireUser, type SessionUser } from '@/lib/server/auth';
+import { creditsNow } from '@/lib/server/limits';
+import { threadLimit } from '@/lib/server/threads';
 
 /**
  * App-owned proxy in front of eve's session routes. The browser points
@@ -55,6 +57,13 @@ async function ownedThread(user: SessionUser, eveSessionId: string) {
   return { row };
 }
 
+/** V10 / D6: no credits left this month → 402, the UI shows the credits card. */
+async function creditsOut(user: SessionUser): Promise<NextResponse | null> {
+  const c = await creditsNow(user.userId);
+  if (!c.out) return null;
+  return NextResponse.json({ error: 'You’ve used this month’s credits.', code: 'CREDITS_OUT', resetsOn: c.resetsOn }, { status: 402 });
+}
+
 export async function POST(req: Request, { params }: Params) {
   try {
     const user = await requireUser(req);
@@ -66,6 +75,8 @@ export async function POST(req: Request, { params }: Params) {
       if (!body || typeof body.message !== 'string' || !body.message.trim()) {
         return NextResponse.json({ error: 'A message is required.' }, { status: 400 });
       }
+      const outOfCredits = await creditsOut(user);
+      if (outOfCredits) return outOfCredits;
       const upstream = await fetch(upstreamUrl(req, path), {
         method: 'POST',
         headers: upstreamHeaders({ 'content-type': 'application/json' }),
@@ -107,6 +118,14 @@ export async function POST(req: Request, { params }: Params) {
       }
       const token = found.row.continuationToken;
       if (!token) return NextResponse.json({ error: 'This conversation cannot be resumed.' }, { status: 409 });
+      // V10 gates: a message (not an approval reply) needs credits and a chat that is not full.
+      if (typeof (body as { message?: unknown }).message === 'string') {
+        const outOfCredits = await creditsOut(user);
+        if (outOfCredits) return outOfCredits;
+        if ((await threadLimit(found.row.id)) === 'full') {
+          return NextResponse.json({ error: 'This chat is full. Start a new one.', code: 'CHAT_FULL' }, { status: 409 });
+        }
+      }
 
       // Refresh ownership context for the connection on every send.
       await upsertSessionContext(sessionId, user.userId);

@@ -1,15 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AnswerMessage, UserMessage } from '@/components/v2/chat/answer';
-import { ChatShell, type ShellAuth, type ShellSession } from '@/components/v2/chat/chat-shell';
+import { ChatShell, type ShellAuth, type ShellLimits, type ShellSession } from '@/components/v2/chat/chat-shell';
 import { type ComposerHandle, isWatchIntent } from '@/components/v2/chat/composer';
-import { SourcesList, SourcesPane } from '@/components/v2/chat/sources-panel';
 import { toast } from '@/components/v2/chat/toast';
 import { useWatchThis } from '@/components/v2/chat/use-watch-this';
 import { WatcherConfirmCard } from '@/components/v2/chat/watcher-card';
 import type { AnswerModel } from '@/lib/v2/answer-model';
-import { NO_DATA_Q, Q, replay, type ReplayKind } from '@/lib/v2/lab-replay';
+import { NO_DATA_Q, Q, replay, type ReplayKind, WATCH_Q } from '@/lib/v2/lab-replay';
 
 /**
  * The `ask` flow from fixtures — the same made-up chats the prototype seeds
@@ -22,6 +21,10 @@ import { NO_DATA_Q, Q, replay, type ReplayKind } from '@/lib/v2/lab-replay';
 const HOUR = 36e5;
 const DRAFT = 'Show every day RELIANCE closed above its 20-day high this year';
 const REPLAYED: ReplayKind[] = ['run', 'answer', 'stopped', 'timeout', 'kite-expired', 'no-market-data'];
+type LimitState = 'low' | 'out' | 'long' | 'full';
+const LIMITS: LimitState[] = ['low', 'out', 'long', 'full'];
+/** The prototype's canned carry-over text (run.js `carry`). */
+const CARRY = 'RELIANCE daily: support at 2,912 and 2,861, resistance at 2,984. You started a watcher at 2,912.';
 
 interface Turn {
   q: string;
@@ -54,6 +57,8 @@ export function AskLab({ state }: { readonly state: string }) {
   const [pulseKey, setPulseKey] = useState(0);
   const [auth, setAuth] = useState<ShellAuth>('kite');
   const [currentId, setCurrentId] = useState<string | null>(null);
+  const [limit, setLimit] = useState<LimitState | null>(null);
+  const [carry, setCarry] = useState<string | null>(null);
   const dock = useRef<ComposerHandle>(null);
   const stopRef = useRef<() => void>(() => {});
   const watchThis = useWatchThis(dock, busy);
@@ -70,7 +75,7 @@ export function AskLab({ state }: { readonly state: string }) {
   const setLast = (m: AnswerModel | null) => setTurns((prev) => (prev.length ? [...prev.slice(0, -1), { ...prev[prev.length - 1], model: m }] : prev));
 
   /** `replace` re-runs the last question in place (redo); otherwise the question is a new turn. */
-  const start = (kind: ReplayKind, q: string, replace = false) => {
+  const start = (kind: ReplayKind, q: string, replace = false, opts: { fast?: boolean; onDone?: () => void } = {}) => {
     stopRef.current();
     watchThis.close();
     setTurns((prev) => (replace && prev.length ? [...prev.slice(0, -1), { q, model: null }] : [...prev, { q, model: null }]));
@@ -88,8 +93,9 @@ export function AskLab({ state }: { readonly state: string }) {
       if (done) {
         setBusy(false);
         if (m.kiteExpired) setAuth('ended');
+        opts.onDone?.();
       }
-    });
+    }, { fast: opts.fast });
   };
   const ask = (text: string) => start(isWatchIntent(text) && /\b(below|above|under|over)\b/i.test(text) ? 'watch' : 'answer', text);
 
@@ -97,15 +103,52 @@ export function AskLab({ state }: { readonly state: string }) {
   useEffect(() => {
     if (!ready) return;
     if (REPLAYED.includes(state as ReplayKind)) start(state as ReplayKind, state === 'no-market-data' ? NO_DATA_Q : Q);
+    // The limit states replay an instant answer (RUN.fast), long/full a watcher question too, then apply the limit.
+    if (LIMITS.includes(state as LimitState)) {
+      const kind = state as LimitState;
+      const apply = () => setLimit(kind);
+      start('answer', Q, false, { fast: true, onDone: () => (kind === 'long' || kind === 'full' ? start('watch', WATCH_Q, false, { fast: true, onDone: apply }) : apply()) });
+    }
     return () => stopRef.current();
   }, [ready, state]);
 
-  const draft = useMemo(() => (state === 'draft' ? DRAFT : ''), [state]);
+  const [draft, setDraft] = useState(state === 'draft' ? DRAFT : '');
+  useEffect(() => {
+    if (state !== 'draft') { setDraft(''); return; }
+    try {
+      const queued = sessionStorage.getItem('slash-home-lab:queued-question');
+      sessionStorage.removeItem('slash-home-lab:queued-question');
+      if (queued) setDraft(queued);
+    } catch {}
+  }, [state]);
   if (!ready) return null;
 
   const expired = auth === 'ended';
-  const last = turns[turns.length - 1]?.model ?? null;
-  const panelSources = !busy && last?.status === 'done' ? last.sources : [];
+  const newChat = () => {
+    stopRef.current();
+    watchThis.close();
+    setTurns([]);
+    setBusy(false);
+    setCurrentId(null);
+    setView('chat');
+    setLimit(null);
+  };
+  const limits: ShellLimits | undefined = limit
+    ? {
+        credits: limit === 'low' ? 'low' : limit === 'out' ? 'out' : null,
+        chat: limit === 'long' ? 'long' : limit === 'full' ? 'full' : null,
+        resetsOn: '2026-12-01',
+        carry: CARRY,
+        onPlans: () => toast('Plans open in your account.', 3200),
+        onWait: () => toast('Fine. Your chats stay open to read.', 3200),
+        onNewChat: newChat,
+        onCarry: () => {
+          newChat();
+          setCarry(CARRY);
+          window.setTimeout(() => document.querySelector<HTMLTextAreaElement>('#form0 .in')?.focus(), 0);
+        },
+      }
+    : undefined;
   const stop = () => {
     stopRef.current();
     setBusy(false);
@@ -124,35 +167,27 @@ export function AskLab({ state }: { readonly state: string }) {
       busy={busy}
       composerDisabled={expired}
       composerPlaceholder={expired ? 'Reconnect Kite to ask' : undefined}
-      creditsLeft={64}
+      carry={carry && turns.length === 0 ? { text: carry, onDismiss: () => setCarry(null) } : null}
+      creditsLeft={limit === 'low' ? 20 : limit === 'out' ? 0 : 64}
       currentId={currentId}
       dockAbove={watchThis.panel}
+      limits={limits}
       dockRef={dock}
       draft={draft}
       empty={turns.length === 0}
       gate={expired ? { text: 'Your Kite session expired during this answer.', action: 'Reconnect Kite', onAction: () => setAuth('kite') } : undefined}
-      hasSources={busy || panelSources.length > 0}
       kiteUntil={kiteUntil}
       onAccount={() => {}}
       onAsk={ask}
       onConnectKite={() => setAuth('kite')}
       onDeleteChat={(id) => setSessions((prev) => prev.filter((s) => s.id !== id))}
-      onNewChat={() => {
-        stopRef.current();
-        watchThis.close();
-        setTurns([]);
-        setBusy(false);
-        setCurrentId(null);
-        setView('chat');
-      }}
+      onNewChat={newChat}
       onOpenChat={() => setView('chat')}
       onRenameChat={(id, title) => setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, title } : s)))}
       onStop={stop}
       onWatchers={() => setView('watchers')}
       pulseKey={pulseKey}
       sessions={sessions}
-      sourcesPane={<SourcesPane loading={busy} sources={panelSources} />}
-      sourcesPanel={<SourcesList loading={busy} sources={panelSources} />}
       statusLine={expired ? 'Kite session expired' : undefined}
       title={turns[0] ? turns[0].q.slice(0, 52) : ''}
       view={view}
