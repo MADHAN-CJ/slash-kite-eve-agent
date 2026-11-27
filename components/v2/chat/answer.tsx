@@ -319,7 +319,7 @@ export function AnswerMessage({
       {footer?.kind === 'error' ? (
         <div className="md">
           <div className="err">
-            Couldn’t get an answer.{' '}
+            {footer.message && !/timed? ?out/i.test(footer.message) ? `${footer.message.replace(/\.?$/, '.')} ` : 'Couldn’t get an answer. '}
             <button className="ib" data-a="retry" onClick={onRetry} style={{ padding: '0 12px' }} type="button">
               Try again
             </button>

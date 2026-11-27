@@ -4,7 +4,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import { useEveAgent, type EveMessage } from 'eve/react';
 import { authHeaders } from '@/lib/client/settings';
 import type { ApiMessage } from '@/lib/client/threads-api';
-import type { AnswerModel } from '@/lib/v2/answer-model';
+import { type AnswerModel, buildAnswer } from '@/lib/v2/answer-model';
 import { callTimes, liveAnswer, storedAnswer } from '@/lib/v2/answer-parts';
 import { AnswerMessage, UserMessage } from './answer';
 import { ChatShell, type ChatShellProps } from './chat-shell';
@@ -264,6 +264,21 @@ export function Conversation({
           />
         ) : null;
       })}
+      {/* A send the server refused (402 credits, 409 full / out of sync, 5xx) has no assistant message to carry
+          the error, so it gets its own line — otherwise the question just sits there unanswered. */}
+      {agent.error && !busy && live.length > 0 && live[live.length - 1]?.role === 'user' ? (
+        <AnswerMessage
+          index={index++}
+          key="send-error"
+          model={buildAnswer({ text: '', tools: [], streaming: false, error: agent.error.message })}
+          onEditQuestion={() => dock.current?.setValue(lastQuestion)}
+          onFollowup={askAndCloseWatch}
+          onReconnect={shell.onConnectKite}
+          onRetry={() => ask(lastQuestion)}
+          onTrade={() => {}}
+          onWatch={() => {}}
+        />
+      ) : null}
       {afterThread}
     </ChatShell>
   );
