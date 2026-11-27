@@ -1,11 +1,12 @@
 import { randomInt } from 'node:crypto';
 import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm';
 import { db, type Db } from '@/agent/lib/db/client';
-import { onboarding } from '@/agent/lib/db/schema';
+import { onboarding, notificationPreferences } from '@/agent/lib/db/schema';
 import { otps, users } from '@/agent/lib/db/mcp-schema';
 import { otpHash } from './mcp-crypto';
 import { HttpError } from './auth';
-import { EMAIL_FROM, loginCodeEmail } from './emails';
+import { EMAIL_FROM } from './emails';
+import { otpEmail } from './notifications/otp';
 
 /**
  * Email OTP login (/markets semantics): 6-digit code, 10-minute life, single
@@ -29,10 +30,11 @@ function devLogin(): { email: string; code: string } | null {
 
 const normalize = (email: string) => email.trim().toLowerCase();
 
-export async function requestOtp(rawEmail: string): Promise<void> {
+export async function requestOtp(rawEmail: string, userAgent = ''): Promise<{ existingAccount: boolean }> {
   const email = normalize(rawEmail);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, 'Enter a valid email address.');
-  if (devLogin()?.email === email) return; // fixed code, nothing to send
+  const existingAccount = Boolean(await db().query.users.findFirst({ where: eq(users.email, email), columns: { id: true } }));
+  if (devLogin()?.email === email) return { existingAccount }; // fixed code, nothing to send
 
   const recent = await db().query.otps.findFirst({
     where: and(eq(otps.email, email), gt(otps.createdAt, new Date(Date.now() - OTP_COOLDOWN_MS))),
@@ -45,14 +47,15 @@ export async function requestOtp(rawEmail: string): Promise<void> {
     .values({ email, codeHash: otpHash(code, email), expiresAt: new Date(Date.now() + OTP_TTL_MS) })
     .returning({ id: otps.id });
   try {
-    await sendOtpEmail(email, code);
+    await sendOtpEmail(email, code, existingAccount, userAgent);
   } catch (error) {
     await db().delete(otps).where(eq(otps.id, issued.id));
     throw error;
   }
+  return { existingAccount };
 }
 
-export async function verifyOtp(rawEmail: string, code: string): Promise<{ userId: string; email: string }> {
+export async function verifyOtp(rawEmail: string, code: string): Promise<{ userId: string; email: string; isNewAccount: boolean }> {
   const email = normalize(rawEmail);
   const trimmed = code.trim();
   const dev = devLogin();
@@ -67,12 +70,13 @@ export async function verifyOtp(rawEmail: string, code: string): Promise<{ userI
       .returning({ id: users.id, email: users.email });
     if (created) {
       await tx.insert(onboarding).values({ userId: created.id });
-      return { userId: created.id, email: created.email };
+      await tx.insert(notificationPreferences).values({ userId: created.id, enrolledAt: new Date() });
+      return { userId: created.id, email: created.email, isNewAccount: true };
     }
 
     const existing = await tx.query.users.findFirst({ where: eq(users.email, email) });
     if (!existing) throw new HttpError(409, 'Your account changed. Request another code.');
-    return { userId: existing.id, email: existing.email };
+    return { userId: existing.id, email: existing.email, isNewAccount: false };
   });
 }
 
@@ -101,7 +105,7 @@ async function consumeStoredOtp(tx: Transaction, email: string, code: string): P
   return updated.length > 0;
 }
 
-async function sendOtpEmail(email: string, code: string): Promise<void> {
+async function sendOtpEmail(email: string, code: string, returning: boolean, userAgent: string): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
     if (process.env.NODE_ENV === 'production')
@@ -116,7 +120,7 @@ async function sendOtpEmail(email: string, code: string): Promise<void> {
       // Sender must be on the Resend-verified domain (codeongrass.com).
       from: EMAIL_FROM,
       to: [email],
-      ...loginCodeEmail(code),
+      ...otpEmail({ email, code, returning, userAgent, at: new Date() }),
     }),
   });
   if (!res.ok) {

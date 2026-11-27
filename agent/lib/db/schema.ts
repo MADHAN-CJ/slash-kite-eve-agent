@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { index, integer, jsonb, pgSchema, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { bigserial, boolean, index, integer, jsonb, pgSchema, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import type { Cost, MessagePart, Role, Usage } from './types';
 
 /**
@@ -136,3 +136,29 @@ export const onboarding = eve.table('onboarding', {
   markets: text('markets').array().notNull().default(sql`ARRAY[]::text[]`),
   completedAt: timestamp('completed_at', { withTimezone: true }),
 });
+
+export const notificationControl = eve.table('notification_control', {
+  id: integer('id').primaryKey(), enabled: boolean('enabled').notNull().default(false),
+  enabledAt: timestamp('enabled_at', { withTimezone: true }),
+});
+export const notificationPreferences = eve.table('notification_preferences', {
+  userId: uuid('user_id').primaryKey(),
+  watchers: boolean('watchers').notNull().default(true), growth: boolean('growth').notNull().default(true),
+  enrolledAt: timestamp('enrolled_at', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+export const notificationJobs = eve.table('notification_jobs', {
+  id: text('id').primaryKey(), userId: uuid('user_id').notNull(), kind: text('kind').notNull(),
+  subjectId: text('subject_id'), payload: jsonb('payload').$type<Record<string, unknown>>().notNull().default({}),
+  dueAt: timestamp('due_at', { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull().default(sql`now() + interval '7 days'`),
+  state: text('state').notNull().default('pending'), attempts: integer('attempts').notNull().default(0),
+  sentAt: timestamp('sent_at', { withTimezone: true }), lastError: text('last_error'),
+  subject: text('subject'), html: text('html'), plainText: text('plain_text'), chartPng: text('chart_png'),
+  providerId: text('provider_id'), createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index('notification_due_idx').on(t.state, t.dueAt), index('notification_user_sent_idx').on(t.userId, t.sentAt)]);
+export const watcherObservations = eve.table('watcher_observations', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(), watcherId: text('watcher_id').notNull(),
+  at: timestamp('at', { withTimezone: true }).notNull().defaultNow(), value: text('value'),
+  status: text('status').notNull(), goodCheck: boolean('good_check').notNull().default(false),
+}, (t) => [index('watcher_observations_watch_idx').on(t.watcherId, t.at)]);

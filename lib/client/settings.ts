@@ -69,14 +69,17 @@ async function jsonError(res: Response, fallback: string): Promise<string> {
   return body?.error ?? fallback;
 }
 
-export async function requestOtp(email: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function requestOtp(email: string): Promise<{ ok: true; existingAccount: boolean } | { ok: false; error: string }> {
   try {
     const res = await fetch('/api/auth/request-otp', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ email }),
     });
-    if (res.ok) return { ok: true };
+    if (res.ok) {
+      const body = await res.json() as { existingAccount?: boolean };
+      return { ok: true, existingAccount: body.existingAccount === true };
+    }
     return { ok: false, error: await jsonError(res, 'Could not send the code.') };
   } catch {
     return { ok: false, error: "Couldn't reach the server." };

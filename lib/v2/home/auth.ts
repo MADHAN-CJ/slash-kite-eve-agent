@@ -1,6 +1,7 @@
 import { requestOtp, setSession, type SessionUser } from '@/lib/client/settings';
 
 interface VerifiedSession {
+  isNewAccount?: boolean;
   ok: true;
   token: string;
   user: SessionUser;
@@ -28,8 +29,8 @@ export function homepageAuth(signedIn: boolean, signInOnLoad: boolean) {
           const body = (await response.json().catch(() => null)) as { error?: string } | null;
           return { ok: false, status: response.status, error: body?.error ?? 'Could not verify the code.' };
         }
-        const { token, user } = (await response.json()) as Omit<VerifiedSession, 'ok'>;
-        return { ok: true, token, user };
+        const { token, user, isNewAccount } = (await response.json()) as Omit<VerifiedSession, 'ok'>;
+        return { ok: true, token, user, isNewAccount };
       } catch {
         return { ok: false, status: 0, error: 'Could not reach /markets. Try again.' };
       }

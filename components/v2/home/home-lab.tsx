@@ -47,11 +47,6 @@ export function HomeLab({
         );
       const product = root.querySelector<HTMLAnchorElement>('nav .links a');
       if (product) product.href = '#secs';
-      const connector = root.querySelector<HTMLAnchorElement>('[data-act="ai"]');
-      if (connector) {
-        connector.removeAttribute('data-act');
-        connector.href = 'https://mcp.slash.markets';
-      }
     }
     const hero = mountHero(root, scope);
     const stopSections = mountSections(root, scope);

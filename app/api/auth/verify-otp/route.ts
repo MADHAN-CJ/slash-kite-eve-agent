@@ -10,8 +10,8 @@ export async function POST(req: Request) {
       return Response.json({ error: 'Email and code are required.' }, { status: 400 });
     }
     const user = await verifyOtp(body.email, body.code);
-    const token = await signSessionJwt(user);
-    return Response.json({ token, user: { id: user.userId, email: user.email } });
+    const token = await signSessionJwt({ userId: user.userId, email: user.email });
+    return Response.json({ token, isNewAccount: user.isNewAccount, user: { id: user.userId, email: user.email } });
   } catch (e) {
     return errorResponse(e, req);
   }
