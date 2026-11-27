@@ -14,6 +14,6 @@ export async function GET(req: Request) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
   try { return Response.json(await deliverNotifications(), { headers: { 'cache-control': 'no-store' } }); }
-  catch (error) { return errorResponse(error); }
+  catch (error) { return errorResponse(error, req); } // detail only with the x-debug-errors header (DEBUG_ERRORS_SECRET)
 }
 export const POST = GET;
